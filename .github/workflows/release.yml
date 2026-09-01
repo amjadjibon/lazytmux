@@ -111,7 +111,6 @@ jobs:
     name: Publish to Crates.io
     needs: publish-github-release
     runs-on: ubuntu-latest
-    if: ${{ secrets.CARGO_REGISTRY_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -121,4 +120,9 @@ jobs:
       - name: Publish to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish --token "$CARGO_REGISTRY_TOKEN"
+        run: |
+          if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
+            echo "CARGO_REGISTRY_TOKEN is not set. Skipping crates.io publish."
+            exit 0
+          fi
+          cargo publish --token "$CARGO_REGISTRY_TOKEN"
