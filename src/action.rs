@@ -31,6 +31,8 @@ pub enum Action {
     // Mutations & Modals
     PromptNewSession,
     PromptNewWindow,
+    PromptNewPane,
+    SplitPane { vertical: bool },
     PromptRenameSession,
     PromptRenameWindow,
     PromptKill,
@@ -39,6 +41,11 @@ pub enum Action {
     ModalInput(char),
     ModalBackspace,
     ModalSubmit,
+
+    // Mouse Actions
+    MouseClick { column: u16, row: u16, double_click: bool },
+    MouseScrollUp { column: u16, row: u16 },
+    MouseScrollDown { column: u16, row: u16 },
 
     // Pane / Session actions
     ToggleZoom,

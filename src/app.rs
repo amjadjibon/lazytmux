@@ -29,6 +29,7 @@ pub enum Mode {
     InspectPane { pane_id: PaneId, scroll_offset: usize },
     PromptNewSession { input: String },
     PromptNewWindow { session_id: SessionId, input: String },
+    PromptNewPane { pane_id: PaneId },
     PromptRenameSession { session_id: SessionId, input: String },
     PromptRenameWindow { window_id: WindowId, input: String },
     ConfirmKill(KillTarget),
@@ -73,6 +74,7 @@ pub struct App {
     pub should_quit: bool,
     pub pending_handoff: Option<(SessionId, String, WindowId, PaneId)>,
     pub is_mock: bool,
+    pub last_area: ratatui::layout::Rect,
 }
 
 impl App {
@@ -88,6 +90,7 @@ impl App {
             should_quit: false,
             pending_handoff: None,
             is_mock,
+            last_area: ratatui::layout::Rect::default(),
         };
         let _ = app.refresh_data();
         app
@@ -237,12 +240,29 @@ impl App {
                 (KeyModifiers::NONE, KeyCode::Char('x')) => Some(Action::PromptKill),
                 (KeyModifiers::NONE, KeyCode::Char('n')) => match self.focus {
                     FocusColumn::Sessions => Some(Action::PromptNewSession),
-                    FocusColumn::Windows | FocusColumn::Panes => Some(Action::PromptNewWindow),
+                    FocusColumn::Windows => Some(Action::PromptNewWindow),
+                    FocusColumn::Panes => Some(Action::PromptNewPane),
                 },
                 (KeyModifiers::NONE, KeyCode::Char('R')) => match self.focus {
                     FocusColumn::Sessions => Some(Action::PromptRenameSession),
                     FocusColumn::Windows | FocusColumn::Panes => Some(Action::PromptRenameWindow),
                 },
+                _ => None,
+            },
+
+            Mode::PromptNewPane { .. } => match (key.modifiers, key.code) {
+                (KeyModifiers::NONE, KeyCode::Esc) | (KeyModifiers::NONE, KeyCode::Char('q')) => {
+                    Some(Action::CancelModal)
+                }
+                (KeyModifiers::NONE, KeyCode::Char('v')) | (KeyModifiers::NONE, KeyCode::Char('V')) => {
+                    Some(Action::SplitPane { vertical: true })
+                }
+                (KeyModifiers::NONE, KeyCode::Char('h'))
+                | (KeyModifiers::NONE, KeyCode::Char('H'))
+                | (KeyModifiers::NONE, KeyCode::Char('s'))
+                | (KeyModifiers::NONE, KeyCode::Char('S')) => {
+                    Some(Action::SplitPane { vertical: false })
+                }
                 _ => None,
             },
 
@@ -306,6 +326,33 @@ impl App {
                 | (KeyModifiers::NONE, KeyCode::Char('?')) => Some(Action::Help),
                 _ => None,
             },
+        }
+    }
+
+    pub fn handle_mouse_event(&mut self, mouse: crossterm::event::MouseEvent, area: ratatui::layout::Rect) -> Option<Action> {
+        self.last_area = area;
+        use crossterm::event::MouseEventKind;
+        match mouse.kind {
+            MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
+                Some(Action::MouseClick {
+                    column: mouse.column,
+                    row: mouse.row,
+                    double_click: false,
+                })
+            }
+            MouseEventKind::ScrollUp => {
+                Some(Action::MouseScrollUp {
+                    column: mouse.column,
+                    row: mouse.row,
+                })
+            }
+            MouseEventKind::ScrollDown => {
+                Some(Action::MouseScrollDown {
+                    column: mouse.column,
+                    row: mouse.row,
+                })
+            }
+            _ => None,
         }
     }
 
@@ -686,6 +733,146 @@ impl App {
                         session_id: s.id.clone(),
                         input: String::new(),
                     };
+                }
+            }
+
+            Action::PromptNewPane => {
+                if let Some(p) = self.selected_pane() {
+                    self.mode = Mode::PromptNewPane {
+                        pane_id: p.id.clone(),
+                    };
+                }
+            }
+
+            Action::SplitPane { vertical } => {
+                if let Mode::PromptNewPane { pane_id } = self.mode.clone() {
+                    match self.client.split_pane(&pane_id, vertical) {
+                        Ok(new_id) => {
+                            let split_type = if vertical { "vertical" } else { "horizontal" };
+                            self.show_toast(
+                                format!("Created {split_type} split pane {new_id}"),
+                                ToastLevel::Success,
+                            );
+                            let _ = self.refresh_data();
+                            if let Some(w) = self.selected_window()
+                                && let Some(pos) = w.panes.iter().position(|p| p.id == new_id)
+                            {
+                                self.selection.pane_idx = pos;
+                            }
+                        }
+                        Err(e) => {
+                            self.show_toast(format!("Split pane failed: {e}"), ToastLevel::Error);
+                        }
+                    }
+                    self.mode = Mode::Normal;
+                }
+            }
+
+            Action::MouseScrollUp { .. } => {
+                if let Mode::InspectPane { .. } = self.mode {
+                    return self.update(Action::InspectScrollUp(3));
+                }
+                return self.update(Action::NavigateUp);
+            }
+
+            Action::MouseScrollDown { .. } => {
+                if let Mode::InspectPane { .. } = self.mode {
+                    return self.update(Action::InspectScrollDown(3));
+                }
+                return self.update(Action::NavigateDown);
+            }
+
+            Action::MouseClick {
+                column,
+                row,
+                double_click,
+            } => {
+                let layout = crate::ui::layout::AppLayout::split(self.last_area);
+
+                // Check if clicked in sessions column
+                if column >= layout.sessions_col.x
+                    && column < layout.sessions_col.x + layout.sessions_col.width
+                    && row >= layout.sessions_col.y
+                    && row < layout.sessions_col.y + layout.sessions_col.height
+                {
+                    self.focus = FocusColumn::Sessions;
+                    if row > layout.sessions_col.y
+                        && row < layout.sessions_col.y + layout.sessions_col.height - 1
+                    {
+                        let clicked_idx = (row - (layout.sessions_col.y + 1)) as usize;
+                        if clicked_idx < self.sessions.len() {
+                            self.selection.session_idx = clicked_idx;
+                            self.selection.window_idx = 0;
+                            self.selection.pane_idx = 0;
+                            self.clamp_selections();
+                            if double_click {
+                                return self.update(Action::OpenSelection);
+                            }
+                        }
+                    }
+                }
+                // Check if clicked in windows column
+                else if column >= layout.windows_col.x
+                    && column < layout.windows_col.x + layout.windows_col.width
+                    && row >= layout.windows_col.y
+                    && row < layout.windows_col.y + layout.windows_col.height
+                {
+                    self.focus = FocusColumn::Windows;
+                    if row > layout.windows_col.y
+                        && row < layout.windows_col.y + layout.windows_col.height - 1
+                    {
+                        let clicked_idx = (row - (layout.windows_col.y + 1)) as usize;
+                        if let Some(session) = self.selected_session()
+                            && clicked_idx < session.windows.len()
+                        {
+                            self.selection.window_idx = clicked_idx;
+                            self.selection.pane_idx = 0;
+                            self.clamp_selections();
+                            if double_click {
+                                return self.update(Action::OpenSelection);
+                            }
+                        }
+                    }
+                }
+                // Check if clicked in panes column
+                else if column >= layout.panes_col.x
+                    && column < layout.panes_col.x + layout.panes_col.width
+                    && row >= layout.panes_col.y
+                    && row < layout.panes_col.y + layout.panes_col.height
+                {
+                    self.focus = FocusColumn::Panes;
+                    if let Some(window) = self.selected_window() {
+                        let inner_panes_area = ratatui::widgets::Block::default()
+                            .borders(ratatui::widgets::Borders::ALL)
+                            .inner(layout.panes_col);
+
+                        let mut found_pane_id = None;
+                        if let Some(root) = crate::domain::LayoutNode::parse(&window.layout_str) {
+                            found_pane_id = root.find_pane_at(inner_panes_area, column, row);
+                        }
+
+                        if let Some(p_id) = found_pane_id {
+                            if let Some(pos) = window.panes.iter().position(|p| p.id == p_id) {
+                                self.selection.pane_idx = pos;
+                            }
+                        } else if !window.panes.is_empty() && row > inner_panes_area.y {
+                            let pane_height =
+                                inner_panes_area.height / window.panes.len().max(1) as u16;
+                            if let Some(clicked_idx) = row
+                                .saturating_sub(inner_panes_area.y)
+                                .checked_div(pane_height)
+                            {
+                                let idx = clicked_idx as usize;
+                                if idx < window.panes.len() {
+                                    self.selection.pane_idx = idx;
+                                }
+                            }
+                        }
+
+                        if double_click {
+                            return self.update(Action::OpenSelection);
+                        }
+                    }
                 }
             }
 

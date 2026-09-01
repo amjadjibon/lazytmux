@@ -68,7 +68,10 @@ fn main() -> color_eyre::Result<()> {
 
     // Main event loop
     while !app.should_quit {
-        terminal.draw(|frame| ui::render(&app, frame))?;
+        terminal.draw(|frame| {
+            app.last_area = frame.area();
+            ui::render(&app, frame);
+        })?;
 
         if let Ok(event) = event_handler.next() {
             match event {
@@ -80,11 +83,19 @@ fn main() -> color_eyre::Result<()> {
                         }
                     }
                 }
+                AppEvent::Mouse(mouse) => {
+                    let current_area = app.last_area;
+                    if let Some(action) = app.handle_mouse_event(mouse, current_area) {
+                        let mut next_action = app.update(action).map_err(|e| eyre!("{e}"))?;
+                        while let Some(act) = next_action {
+                            next_action = app.update(act).map_err(|e| eyre!("{e}"))?;
+                        }
+                    }
+                }
                 AppEvent::Tick => {
                     let _ = app.update(Action::Tick);
                 }
                 AppEvent::Resize(_, _) => {}
-                _ => {}
             }
         }
     }

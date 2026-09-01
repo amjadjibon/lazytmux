@@ -79,3 +79,50 @@ fn test_kill_session_with_confirmation() {
     assert_eq!(app.sessions.len(), initial_count - 1);
     assert_ne!(app.selected_session().unwrap().name, "work");
 }
+
+#[test]
+fn test_create_window() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    let initial_windows = app.selected_session().unwrap().windows.len();
+
+    // Trigger prompt
+    app.update(Action::PromptNewWindow).unwrap();
+    if let Mode::PromptNewWindow { input, .. } = &app.mode {
+        assert_eq!(input, "");
+    } else {
+        panic!("Expected PromptNewWindow mode");
+    }
+
+    // Type name and submit
+    app.update(Action::ModalInput('a')).unwrap();
+    app.update(Action::ModalInput('p')).unwrap();
+    app.update(Action::ModalInput('i')).unwrap();
+    app.update(Action::ModalSubmit).unwrap();
+
+    assert_eq!(app.mode, Mode::Normal);
+    assert_eq!(app.selected_session().unwrap().windows.len(), initial_windows + 1);
+    assert_eq!(app.selected_session().unwrap().windows.last().unwrap().name, "api");
+}
+
+#[test]
+fn test_create_and_split_pane() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    let initial_panes = app.selected_window().unwrap().panes.len();
+
+    // Prompt new pane
+    app.update(Action::PromptNewPane).unwrap();
+    if let Mode::PromptNewPane { pane_id } = &app.mode {
+        assert_eq!(pane_id.0, "%1");
+    } else {
+        panic!("Expected PromptNewPane mode");
+    }
+
+    // Split vertically
+    app.update(Action::SplitPane { vertical: true }).unwrap();
+    assert_eq!(app.mode, Mode::Normal);
+    assert_eq!(app.selected_window().unwrap().panes.len(), initial_panes + 1);
+}

@@ -15,6 +15,9 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
         Mode::PromptNewWindow { input, .. } => {
             render_input_prompt("New Window", "Enter window name:", input, frame, area, theme)
         }
+        Mode::PromptNewPane { pane_id } => {
+            render_new_pane(pane_id, frame, area, theme)
+        }
         Mode::PromptRenameSession { input, .. } => {
             render_input_prompt("Rename Session", "Enter new name:", input, frame, area, theme)
         }
@@ -24,6 +27,56 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
         Mode::Help => render_help(frame, area, theme),
         _ => {}
     }
+}
+
+fn render_new_pane(pane_id: &crate::domain::PaneId, frame: &mut Frame, area: Rect, theme: &Theme) {
+    let overlay_area = centered_rect(58, 30, area);
+    frame.render_widget(Clear, overlay_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .title(" New Pane Split ")
+        .title_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([Constraint::Min(4), Constraint::Length(1)])
+        .split(block.inner(overlay_area));
+
+    frame.render_widget(block, overlay_area);
+
+    let lines = vec![
+        Line::from(vec![
+            Span::raw("Split target pane "),
+            Span::styled(&pane_id.0, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::raw(":"),
+        ]),
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled(" [v] ", Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD)),
+            Span::raw(" Vertical Split   (side-by-side columns)"),
+        ]),
+        Line::from(vec![
+            Span::styled(" [h] ", Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD)),
+            Span::raw(" Horizontal Split (stacked top/bottom)"),
+        ]),
+    ];
+
+    let msg_widget = Paragraph::new(lines);
+    frame.render_widget(msg_widget, chunks[0]);
+
+    let prompt_line = Line::from(vec![
+        Span::styled(" [v/h] ", Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD)),
+        Span::raw(" Choose Split   "),
+        Span::styled(" [Esc] ", Style::default().bg(Color::DarkGray).fg(Color::White)),
+        Span::raw(" Cancel"),
+    ]);
+
+    let prompt_widget = Paragraph::new(prompt_line).style(theme.dim);
+    frame.render_widget(prompt_widget, chunks[1]);
 }
 
 fn render_confirm_kill(target: &KillTarget, frame: &mut Frame, area: Rect, theme: &Theme) {

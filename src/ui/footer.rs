@@ -134,6 +134,8 @@ pub fn render_footer(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
             Span::raw(" move "),
             Span::styled(" Enter ", Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD)),
             Span::raw(" focus "),
+            Span::styled(" n ", Style::default().bg(Color::DarkGray).fg(Color::White)),
+            Span::raw(" new "),
             Span::styled(" Space ", Style::default().bg(Color::DarkGray).fg(Color::White)),
             Span::raw(" inspect "),
             Span::styled(" z ", Style::default().bg(Color::DarkGray).fg(Color::White)),

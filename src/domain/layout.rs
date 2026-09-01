@@ -65,6 +65,54 @@ impl LayoutNode {
             LayoutSplit::Vertical => self.height(),
         }
     }
+
+    pub fn find_pane_at(&self, area: ratatui::layout::Rect, x: u16, y: u16) -> Option<PaneId> {
+        if x < area.x || x >= area.x + area.width || y < area.y || y >= area.y + area.height {
+            return None;
+        }
+
+        match self {
+            LayoutNode::Leaf { pane_id, .. } => pane_id.clone(),
+            LayoutNode::Container { split, children, .. } => {
+                if children.is_empty() {
+                    return None;
+                }
+
+                let dir = match split {
+                    LayoutSplit::Horizontal => ratatui::layout::Direction::Horizontal,
+                    LayoutSplit::Vertical => ratatui::layout::Direction::Vertical,
+                };
+
+                let total_dim: u32 = children.iter().map(|c| c.dimension(split) as u32).sum();
+                let constraints: Vec<ratatui::layout::Constraint> = children
+                    .iter()
+                    .map(|c| {
+                        let dim = c.dimension(split) as u32;
+                        if total_dim > 0 {
+                            ratatui::layout::Constraint::Ratio(dim.max(1), total_dim.max(1))
+                        } else {
+                            ratatui::layout::Constraint::Ratio(1, children.len() as u32)
+                        }
+                    })
+                    .collect();
+
+                let chunks = ratatui::layout::Layout::default()
+                    .direction(dir)
+                    .constraints(constraints)
+                    .split(area);
+
+                for (idx, child) in children.iter().enumerate() {
+                    if idx < chunks.len()
+                        && let Some(p_id) = child.find_pane_at(chunks[idx], x, y)
+                    {
+                        return Some(p_id);
+                    }
+                }
+
+                None
+            }
+        }
+    }
 }
 
 fn parse_number<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) -> Option<u16> {

@@ -154,3 +154,42 @@ fn test_toast_notification() {
     assert_eq!(app.toasts.len(), 1);
     assert_eq!(app.toasts[0].message, "Test notification");
 }
+
+#[test]
+fn test_mouse_selection() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+    app.last_area = ratatui::layout::Rect::new(0, 0, 100, 30);
+
+    // Click on 1st session row (sessions col top border is y=1, row 0 is y=2)
+    app.update(Action::MouseClick {
+        column: 5,
+        row: 2,
+        double_click: false,
+    })
+    .unwrap();
+
+    assert_eq!(app.focus, lazytmux::app::FocusColumn::Sessions);
+    assert_eq!(app.selection.session_idx, 0);
+
+    // Click on 2nd window row in windows col (top border is y=1, row 0 is y=2, row 1 is y=3)
+    app.update(Action::MouseClick {
+        column: 30,
+        row: 3,
+        double_click: false,
+    })
+    .unwrap();
+
+    assert_eq!(app.focus, lazytmux::app::FocusColumn::Windows);
+    assert_eq!(app.selection.window_idx, 1);
+
+    // Click on panes col (x: 55..100)
+    app.update(Action::MouseClick {
+        column: 70,
+        row: 5,
+        double_click: false,
+    })
+    .unwrap();
+
+    assert_eq!(app.focus, lazytmux::app::FocusColumn::Panes);
+}
