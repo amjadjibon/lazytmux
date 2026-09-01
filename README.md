@@ -81,7 +81,7 @@ bind-key C-s display-popup -E -w 80% -h 80% "lazytmux"
 | `Shift + Tab` | Cycle to previous column |
 | `Enter` | Attach to session / Focus window / Handoff to pane |
 | `/` | Open interactive fuzzy finder |
-| `Space` | Toggle fullscreen scrollback inspect mode |
+| `z` / `Space` | Toggle fullscreen zoom / inspect mode on selected pane |
 | `?` | Open keybinding help overlay |
 | `q` / `Ctrl + c` | Quit LazyTmux |
 
@@ -95,10 +95,9 @@ bind-key C-s display-popup -E -w 80% -h 80% "lazytmux"
 | `r` / `R` / `F2` | **Sessions / Windows** | Rename active session or window |
 | `x` | **Any column** | Kill selected session, window, or pane (with confirmation) |
 | `f` | **Sessions** | Toggle session favorite bookmark (`★`) |
-| `z` | **Panes** | Toggle pane zoom state |
 | `c` | **Panes / Inspect** | Copy captured pane buffer to system clipboard |
 
-### Inspect Mode (`Space`)
+### Inspect / Zoom Mode (`z` / `Space`)
 
 | Key | Action |
 | --- | --- |
@@ -109,7 +108,7 @@ bind-key C-s display-popup -E -w 80% -h 80% "lazytmux"
 | `g` | Jump to top of scrollback |
 | `G` | Jump to bottom of scrollback |
 | `c` | Copy visible scrollback to clipboard |
-| `Esc` / `q` / `Space` | Exit inspect mode |
+| `Esc` / `q` / `z` / `Space` | Exit inspect / zoom mode |
 
 ---
 

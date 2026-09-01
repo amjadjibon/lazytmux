@@ -274,9 +274,16 @@ fn test_toggle_zoom() {
     let mock = Box::new(MockTmuxClient::new());
     let mut app = App::new(mock, Config::default(), true);
 
-    let res = app.update(Action::ToggleZoom).unwrap();
-    assert!(res.is_none());
-    assert!(!app.toasts.is_empty());
+    // Initial state is Normal mode
+    assert_eq!(app.mode, Mode::Normal);
+
+    // Toggle zoom enters Inspect mode
+    app.update(Action::ToggleZoom).unwrap();
+    assert!(matches!(app.mode, Mode::InspectPane { .. }));
+
+    // Toggle zoom again exits Inspect mode back to Normal
+    app.update(Action::ToggleZoom).unwrap();
+    assert_eq!(app.mode, Mode::Normal);
 }
 
 #[test]

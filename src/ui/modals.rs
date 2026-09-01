@@ -361,16 +361,12 @@ fn render_help(frame: &mut Frame, area: Rect, theme: &Theme) {
             Span::raw("Toggle favorite on selected session"),
         ]),
         Line::from(vec![
-            Span::styled("  z                     ", Style::default().fg(Color::Cyan)),
-            Span::raw("Toggle zoom on selected pane"),
+            Span::styled("  z / Space             ", Style::default().fg(Color::Cyan)),
+            Span::raw("Zoom / inspect full-screen scrollback for selected pane"),
         ]),
         Line::from(vec![
             Span::styled("  c                     ", Style::default().fg(Color::Cyan)),
             Span::raw("Copy pane output to system clipboard"),
-        ]),
-        Line::from(vec![
-            Span::styled("  Space                 ", Style::default().fg(Color::Cyan)),
-            Span::raw("Open full-screen Inspect Mode for selected pane"),
         ]),
         Line::raw(""),
         Line::from(vec![Span::styled(

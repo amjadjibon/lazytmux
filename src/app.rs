@@ -343,6 +343,7 @@ impl App {
             Mode::InspectPane { .. } => match (key.modifiers, key.code) {
                 (KeyModifiers::NONE, KeyCode::Esc)
                 | (KeyModifiers::NONE, KeyCode::Char('q') | KeyCode::Char('Q'))
+                | (KeyModifiers::NONE, KeyCode::Char('z') | KeyCode::Char('Z'))
                 | (KeyModifiers::NONE, KeyCode::Char(' ')) => Some(Action::ToggleInspect),
                 (KeyModifiers::NONE, KeyCode::Char('j') | KeyCode::Down) => {
                     Some(Action::InspectScrollDown(1))
@@ -691,11 +692,7 @@ impl App {
             }
 
             Action::ToggleZoom => {
-                if let Some(pane) = self.selected_pane() {
-                    let p_id = pane.id.clone();
-                    let _ = self.client.zoom_pane(&p_id);
-                    self.show_toast(format!("Toggled zoom on {p_id}"), ToastLevel::Info);
-                }
+                return self.update(Action::ToggleInspect);
             }
 
             Action::ToggleSearch => {

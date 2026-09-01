@@ -181,12 +181,10 @@ pub fn render_footer(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
             Span::styled(" n ", Style::default().bg(Color::DarkGray).fg(Color::White)),
             Span::raw(" new "),
             Span::styled(
-                " Space ",
+                " z/Space ",
                 Style::default().bg(Color::DarkGray).fg(Color::White),
             ),
             Span::raw(" inspect "),
-            Span::styled(" z ", Style::default().bg(Color::DarkGray).fg(Color::White)),
-            Span::raw(" zoom "),
             Span::styled(" c ", Style::default().bg(Color::DarkGray).fg(Color::White)),
             Span::raw(" copy "),
             Span::styled(" x ", Style::default().bg(Color::DarkGray).fg(Color::White)),
