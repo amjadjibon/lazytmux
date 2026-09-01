@@ -22,12 +22,61 @@ pub enum KillTarget {
     Pane(PaneId, String),
 }
 
+use crate::ui::Theme;
+
+const LAYOUT_PRESETS: &[&str] = &[
+    "even-horizontal",
+    "even-vertical",
+    "main-horizontal",
+    "main-vertical",
+    "tiled",
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SearchCategory {
+    #[default]
+    All,
+    Sessions,
+    Windows,
+    Panes,
+}
+
+impl SearchCategory {
+    pub fn name(&self) -> &'static str {
+        match self {
+            SearchCategory::All => "All",
+            SearchCategory::Sessions => "Sessions",
+            SearchCategory::Windows => "Windows",
+            SearchCategory::Panes => "Panes",
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            SearchCategory::All => SearchCategory::Sessions,
+            SearchCategory::Sessions => SearchCategory::Windows,
+            SearchCategory::Windows => SearchCategory::Panes,
+            SearchCategory::Panes => SearchCategory::All,
+        }
+    }
+
+    pub fn prev(&self) -> Self {
+        match self {
+            SearchCategory::All => SearchCategory::Panes,
+            SearchCategory::Sessions => SearchCategory::All,
+            SearchCategory::Windows => SearchCategory::Sessions,
+            SearchCategory::Panes => SearchCategory::Windows,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mode {
     Normal,
     Search {
         query: String,
         selected_index: usize,
+        category: SearchCategory,
     },
     InspectPane {
         pane_id: PaneId,
@@ -72,6 +121,7 @@ pub struct Toast {
 
 #[derive(Debug, Clone)]
 pub struct SearchItem {
+    pub category: SearchCategory,
     pub session_id: SessionId,
     pub session_name: String,
     pub window_id: WindowId,
@@ -79,11 +129,13 @@ pub struct SearchItem {
     pub pane_id: PaneId,
     pub command: String,
     pub path: String,
+    pub git_branch: Option<String>,
     pub display_text: String,
 }
 
 pub struct App {
     pub config: Config,
+    pub theme: Theme,
     pub focus: FocusColumn,
     pub mode: Mode,
     pub selection: SelectionState,
@@ -94,12 +146,21 @@ pub struct App {
     pub pending_handoff: Option<(SessionId, String, WindowId, PaneId)>,
     pub is_mock: bool,
     pub last_area: ratatui::layout::Rect,
+    pub layout_preset_idx: usize,
 }
 
 impl App {
     pub fn new(client: Box<dyn TmuxClient>, config: Config, is_mock: bool) -> Self {
+        let border_type = match config.theme.border_style.as_str() {
+            "double" => ratatui::widgets::BorderType::Double,
+            "plain" => ratatui::widgets::BorderType::Plain,
+            "thick" => ratatui::widgets::BorderType::Thick,
+            _ => ratatui::widgets::BorderType::Rounded,
+        };
+        let theme = config.theme.preset.to_theme(border_type);
         let mut app = Self {
             config,
+            theme,
             focus: FocusColumn::Sessions,
             mode: Mode::Normal,
             selection: SelectionState::default(),
@@ -110,6 +171,7 @@ impl App {
             pending_handoff: None,
             is_mock,
             last_area: ratatui::layout::Rect::default(),
+            layout_preset_idx: 0,
         };
         let _ = app.refresh_data();
         app
@@ -188,14 +250,55 @@ impl App {
     pub fn search_items(&self) -> Vec<SearchItem> {
         let mut items = Vec::new();
         for session in &self.sessions {
+            // Session entry
+            let first_win = session.windows.first();
+            let first_pane = first_win.and_then(|w| w.panes.first());
+            if let (Some(win), Some(pane)) = (first_win, first_pane) {
+                let display_text = format!("[session] {}", session.name);
+                items.push(SearchItem {
+                    category: SearchCategory::Sessions,
+                    session_id: session.id.clone(),
+                    session_name: session.name.clone(),
+                    window_id: win.id.clone(),
+                    window_name: win.name.clone(),
+                    pane_id: pane.id.clone(),
+                    command: pane.current_command.clone(),
+                    path: pane.current_path.to_string_lossy().to_string(),
+                    git_branch: pane.git_branch.clone(),
+                    display_text,
+                });
+            }
+
             for window in &session.windows {
+                if let Some(pane) = window.panes.first() {
+                    let display_text = format!("[window] {} > {}", session.name, window.name);
+                    items.push(SearchItem {
+                        category: SearchCategory::Windows,
+                        session_id: session.id.clone(),
+                        session_name: session.name.clone(),
+                        window_id: window.id.clone(),
+                        window_name: window.name.clone(),
+                        pane_id: pane.id.clone(),
+                        command: pane.current_command.clone(),
+                        path: pane.current_path.to_string_lossy().to_string(),
+                        git_branch: pane.git_branch.clone(),
+                        display_text,
+                    });
+                }
+
                 for pane in &window.panes {
                     let path_str = pane.current_path.to_string_lossy().to_string();
+                    let branch_str = pane
+                        .git_branch
+                        .as_deref()
+                        .map(|b| format!(" ({b})"))
+                        .unwrap_or_default();
                     let display_text = format!(
-                        "{} {} {} {} {}",
-                        session.name, window.name, pane.id.0, pane.current_command, path_str
+                        "[pane] {} > {} > {} {}{}",
+                        session.name, window.name, pane.id.0, pane.current_command, branch_str
                     );
                     items.push(SearchItem {
+                        category: SearchCategory::Panes,
                         session_id: session.id.clone(),
                         session_name: session.name.clone(),
                         window_id: window.id.clone(),
@@ -203,6 +306,7 @@ impl App {
                         pane_id: pane.id.clone(),
                         command: pane.current_command.clone(),
                         path: path_str,
+                        git_branch: pane.git_branch.clone(),
                         display_text,
                     });
                 }
@@ -211,8 +315,16 @@ impl App {
         items
     }
 
-    pub fn filtered_search_results(&self, query: &str) -> Vec<SearchItem> {
-        let all_items = self.search_items();
+    pub fn filtered_search_results(
+        &self,
+        query: &str,
+        category: SearchCategory,
+    ) -> Vec<SearchItem> {
+        let mut all_items = self.search_items();
+        if category != SearchCategory::All {
+            all_items.retain(|i| i.category == category);
+        }
+
         if query.trim().is_empty() {
             return all_items;
         }
@@ -262,8 +374,13 @@ impl App {
                 (m, KeyCode::Char('?')) if m.is_empty() || m == KeyModifiers::SHIFT => {
                     Some(Action::Help)
                 }
-                (KeyModifiers::CONTROL, KeyCode::Char('r') | KeyCode::Char('R'))
-                | (KeyModifiers::NONE, KeyCode::F(5)) => Some(Action::Refresh),
+                (KeyModifiers::CONTROL, KeyCode::Char('r') | KeyCode::Char('R')) => {
+                    match self.focus {
+                        FocusColumn::Panes => Some(Action::RespawnPane),
+                        FocusColumn::Sessions | FocusColumn::Windows => Some(Action::Refresh),
+                    }
+                }
+                (KeyModifiers::NONE, KeyCode::F(5)) => Some(Action::Refresh),
                 (KeyModifiers::NONE, KeyCode::Char(' ')) => Some(Action::ToggleInspect),
                 (m, KeyCode::Char('z') | KeyCode::Char('Z')) if m.is_empty() => {
                     Some(Action::ToggleZoom)
@@ -277,11 +394,54 @@ impl App {
                 (m, KeyCode::Char('x') | KeyCode::Char('X')) if m.is_empty() => {
                     Some(Action::PromptKill)
                 }
+                (m, KeyCode::Char('t') | KeyCode::Char('T'))
+                    if m.is_empty() || m == KeyModifiers::SHIFT =>
+                {
+                    Some(Action::NextTheme)
+                }
                 (m, KeyCode::Char('n') | KeyCode::Char('N')) if m.is_empty() => match self.focus {
                     FocusColumn::Sessions => Some(Action::PromptNewSession),
                     FocusColumn::Windows => Some(Action::PromptNewWindow),
                     FocusColumn::Panes => Some(Action::PromptNewPane),
                 },
+                // Pane specific shortcuts
+                (m, KeyCode::Char('l') | KeyCode::Char('L'))
+                    if (m.is_empty() || m == KeyModifiers::SHIFT)
+                        && self.focus == FocusColumn::Panes =>
+                {
+                    Some(Action::NextLayout)
+                }
+                (m, KeyCode::Char('s') | KeyCode::Char('S'))
+                    if (m.is_empty() || m == KeyModifiers::SHIFT)
+                        && self.focus == FocusColumn::Panes =>
+                {
+                    Some(Action::ToggleSyncPanes)
+                }
+                (m, KeyCode::Char('[') | KeyCode::Char('<'))
+                    if (m.is_empty() || m == KeyModifiers::SHIFT)
+                        && self.focus == FocusColumn::Panes =>
+                {
+                    Some(Action::SwapPaneUp)
+                }
+                (m, KeyCode::Char(']') | KeyCode::Char('>'))
+                    if (m.is_empty() || m == KeyModifiers::SHIFT)
+                        && self.focus == FocusColumn::Panes =>
+                {
+                    Some(Action::SwapPaneDown)
+                }
+                // Window specific shortcuts (reordering)
+                (m, KeyCode::Char('[') | KeyCode::Char('<'))
+                    if (m.is_empty() || m == KeyModifiers::SHIFT)
+                        && self.focus == FocusColumn::Windows =>
+                {
+                    Some(Action::MoveWindowLeft)
+                }
+                (m, KeyCode::Char(']') | KeyCode::Char('>'))
+                    if (m.is_empty() || m == KeyModifiers::SHIFT)
+                        && self.focus == FocusColumn::Windows =>
+                {
+                    Some(Action::MoveWindowRight)
+                }
                 // Allow both 'r', 'R' (with or without Shift modifier), and F2 for Rename
                 (m, KeyCode::Char('r') | KeyCode::Char('R'))
                     if m.is_empty() || m == KeyModifiers::SHIFT =>
@@ -325,6 +485,10 @@ impl App {
             Mode::Search { .. } => match (key.modifiers, key.code) {
                 (KeyModifiers::NONE, KeyCode::Esc) => Some(Action::ToggleSearch),
                 (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::SearchSelect),
+                (KeyModifiers::NONE, KeyCode::Tab) => Some(Action::SearchNextCategory),
+                (m, KeyCode::BackTab) if m.is_empty() || m == KeyModifiers::SHIFT => {
+                    Some(Action::SearchPrevCategory)
+                }
                 (KeyModifiers::NONE, KeyCode::Down)
                 | (KeyModifiers::CONTROL, KeyCode::Char('n') | KeyCode::Char('j')) => {
                     Some(Action::SearchNext)
@@ -695,6 +859,128 @@ impl App {
                 return self.update(Action::ToggleInspect);
             }
 
+            Action::NextTheme => {
+                let next_preset = self.theme.preset.next();
+                self.theme = next_preset.to_theme(self.theme.border_type);
+                self.show_toast(format!("Theme: {}", next_preset.name()), ToastLevel::Info);
+            }
+
+            Action::PrevTheme => {
+                let prev_preset = self.theme.preset.prev();
+                self.theme = prev_preset.to_theme(self.theme.border_type);
+                self.show_toast(format!("Theme: {}", prev_preset.name()), ToastLevel::Info);
+            }
+
+            Action::NextLayout => {
+                if let Some(win) = self.selected_window() {
+                    let w_id = win.id.clone();
+                    let next_idx = (self.layout_preset_idx + 1) % LAYOUT_PRESETS.len();
+                    self.layout_preset_idx = next_idx;
+                    let preset_name = LAYOUT_PRESETS[next_idx];
+                    if let Err(e) = self.client.select_layout(&w_id, preset_name) {
+                        self.show_toast(format!("Failed to set layout: {e}"), ToastLevel::Error);
+                    } else {
+                        self.show_toast(format!("Layout: {preset_name}"), ToastLevel::Success);
+                        let _ = self.refresh_data();
+                    }
+                }
+            }
+
+            Action::ToggleSyncPanes => {
+                if let Some(win) = self.selected_window() {
+                    let w_id = win.id.clone();
+                    match self.client.toggle_sync_panes(&w_id) {
+                        Ok(synced) => {
+                            let msg = if synced {
+                                "Synchronize panes: ON (broadcast typing enabled)"
+                            } else {
+                                "Synchronize panes: OFF"
+                            };
+                            self.show_toast(msg.to_string(), ToastLevel::Info);
+                        }
+                        Err(e) => {
+                            self.show_toast(format!("Sync panes failed: {e}"), ToastLevel::Error);
+                        }
+                    }
+                }
+            }
+
+            Action::SwapPaneUp => {
+                if let Some(pane) = self.selected_pane() {
+                    let p_id = pane.id.clone();
+                    if let Err(e) = self.client.swap_pane(&p_id, true) {
+                        self.show_toast(format!("Swap pane failed: {e}"), ToastLevel::Error);
+                    } else {
+                        self.show_toast("Swapped pane up".to_string(), ToastLevel::Success);
+                        if self.selection.pane_idx > 0 {
+                            self.selection.pane_idx -= 1;
+                        }
+                        let _ = self.refresh_data();
+                    }
+                }
+            }
+
+            Action::SwapPaneDown => {
+                if let Some(pane) = self.selected_pane() {
+                    let p_id = pane.id.clone();
+                    if let Err(e) = self.client.swap_pane(&p_id, false) {
+                        self.show_toast(format!("Swap pane failed: {e}"), ToastLevel::Error);
+                    } else {
+                        self.show_toast("Swapped pane down".to_string(), ToastLevel::Success);
+                        if let Some(win) = self.selected_window()
+                            && self.selection.pane_idx + 1 < win.panes.len()
+                        {
+                            self.selection.pane_idx += 1;
+                        }
+                        let _ = self.refresh_data();
+                    }
+                }
+            }
+
+            Action::MoveWindowLeft => {
+                if let Some(win) = self.selected_window() {
+                    let w_id = win.id.clone();
+                    if let Err(e) = self.client.swap_window(&w_id, true) {
+                        self.show_toast(format!("Move window failed: {e}"), ToastLevel::Error);
+                    } else {
+                        self.show_toast("Moved window left".to_string(), ToastLevel::Success);
+                        if self.selection.window_idx > 0 {
+                            self.selection.window_idx -= 1;
+                        }
+                        let _ = self.refresh_data();
+                    }
+                }
+            }
+
+            Action::MoveWindowRight => {
+                if let Some(win) = self.selected_window() {
+                    let w_id = win.id.clone();
+                    if let Err(e) = self.client.swap_window(&w_id, false) {
+                        self.show_toast(format!("Move window failed: {e}"), ToastLevel::Error);
+                    } else {
+                        self.show_toast("Moved window right".to_string(), ToastLevel::Success);
+                        if let Some(s) = self.selected_session()
+                            && self.selection.window_idx + 1 < s.windows.len()
+                        {
+                            self.selection.window_idx += 1;
+                        }
+                        let _ = self.refresh_data();
+                    }
+                }
+            }
+
+            Action::RespawnPane => {
+                if let Some(pane) = self.selected_pane() {
+                    let p_id = pane.id.clone();
+                    if let Err(e) = self.client.respawn_pane(&p_id) {
+                        self.show_toast(format!("Respawn pane failed: {e}"), ToastLevel::Error);
+                    } else {
+                        self.show_toast(format!("Respawned pane {p_id}"), ToastLevel::Success);
+                        let _ = self.refresh_data();
+                    }
+                }
+            }
+
             Action::ToggleSearch => {
                 if let Mode::Search { .. } = self.mode {
                     self.mode = Mode::Normal;
@@ -702,7 +988,32 @@ impl App {
                     self.mode = Mode::Search {
                         query: String::new(),
                         selected_index: 0,
+                        category: SearchCategory::All,
                     };
+                }
+            }
+
+            Action::SearchNextCategory => {
+                if let Mode::Search {
+                    category,
+                    selected_index,
+                    ..
+                } = &mut self.mode
+                {
+                    *category = category.next();
+                    *selected_index = 0;
+                }
+            }
+
+            Action::SearchPrevCategory => {
+                if let Mode::Search {
+                    category,
+                    selected_index,
+                    ..
+                } = &mut self.mode
+                {
+                    *category = category.prev();
+                    *selected_index = 0;
                 }
             }
 
@@ -710,6 +1021,7 @@ impl App {
                 if let Mode::Search {
                     query,
                     selected_index,
+                    ..
                 } = &mut self.mode
                 {
                     query.push(c);
@@ -721,6 +1033,7 @@ impl App {
                 if let Mode::Search {
                     query,
                     selected_index,
+                    ..
                 } = &mut self.mode
                 {
                     query.pop();
@@ -729,14 +1042,17 @@ impl App {
             }
 
             Action::SearchNext => {
-                let query = if let Mode::Search { query, .. } = &self.mode {
-                    Some(query.clone())
+                let (query, category) = if let Mode::Search {
+                    query, category, ..
+                } = &self.mode
+                {
+                    (Some(query.clone()), *category)
                 } else {
-                    None
+                    (None, SearchCategory::All)
                 };
 
                 if let Some(q) = query {
-                    let results_len = self.filtered_search_results(&q).len();
+                    let results_len = self.filtered_search_results(&q, category).len();
                     if let Mode::Search { selected_index, .. } = &mut self.mode
                         && results_len > 0
                         && *selected_index + 1 < results_len
@@ -758,9 +1074,10 @@ impl App {
                 if let Mode::Search {
                     query,
                     selected_index,
+                    category,
                 } = &self.mode
                 {
-                    let results = self.filtered_search_results(query);
+                    let results = self.filtered_search_results(query, *category);
                     if let Some(item) = results.get(*selected_index) {
                         let (s_id, s_name, w_id, p_id) = (
                             item.session_id.clone(),
@@ -777,6 +1094,7 @@ impl App {
                         }));
                     }
                 }
+                self.mode = Mode::Normal;
             }
 
             Action::PromptKill => match self.focus {

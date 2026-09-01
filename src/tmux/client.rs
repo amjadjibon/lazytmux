@@ -21,6 +21,11 @@ pub trait TmuxClient: Send + Sync {
     fn kill_pane(&mut self, pane: &PaneId) -> Result<()>;
     fn zoom_pane(&mut self, pane: &PaneId) -> Result<()>;
     fn split_pane(&mut self, pane: &PaneId, vertical: bool) -> Result<PaneId>;
+    fn select_layout(&mut self, window: &WindowId, layout: &str) -> Result<()>;
+    fn toggle_sync_panes(&mut self, window: &WindowId) -> Result<bool>;
+    fn swap_pane(&mut self, pane: &PaneId, up: bool) -> Result<()>;
+    fn swap_window(&mut self, window: &WindowId, left: bool) -> Result<()>;
+    fn respawn_pane(&mut self, pane: &PaneId) -> Result<()>;
 
     // Focus & Navigation
     fn focus_pane(&self, session: &SessionId, window: &WindowId, pane: &PaneId) -> Result<()>;

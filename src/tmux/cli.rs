@@ -167,6 +167,49 @@ impl TmuxClient for CliTmuxClient {
         Ok(PaneId::from(out.trim()))
     }
 
+    fn select_layout(&mut self, window: &WindowId, layout: &str) -> Result<()> {
+        self.run_cmd(&["select-layout", "-t", &window.0, layout])?;
+        Ok(())
+    }
+
+    fn toggle_sync_panes(&mut self, window: &WindowId) -> Result<bool> {
+        let current = self
+            .run_cmd(&[
+                "show-window-options",
+                "-t",
+                &window.0,
+                "-v",
+                "synchronize-panes",
+            ])
+            .unwrap_or_default();
+        let new_state = if current.trim() == "on" { "off" } else { "on" };
+        self.run_cmd(&[
+            "set-window-option",
+            "-t",
+            &window.0,
+            "synchronize-panes",
+            new_state,
+        ])?;
+        Ok(new_state == "on")
+    }
+
+    fn swap_pane(&mut self, pane: &PaneId, up: bool) -> Result<()> {
+        let flag = if up { "-U" } else { "-D" };
+        self.run_cmd(&["swap-pane", flag, "-t", &pane.0])?;
+        Ok(())
+    }
+
+    fn swap_window(&mut self, window: &WindowId, left: bool) -> Result<()> {
+        let target = if left { "-1" } else { "+1" };
+        self.run_cmd(&["swap-window", "-d", "-s", &window.0, "-t", target])?;
+        Ok(())
+    }
+
+    fn respawn_pane(&mut self, pane: &PaneId) -> Result<()> {
+        self.run_cmd(&["respawn-pane", "-k", "-t", &pane.0])?;
+        Ok(())
+    }
+
     fn focus_pane(&self, session: &SessionId, window: &WindowId, pane: &PaneId) -> Result<()> {
         // Run select commands
         let _ = self.run_cmd(&["select-window", "-t", &window.0]);

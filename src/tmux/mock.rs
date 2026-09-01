@@ -386,6 +386,48 @@ impl TmuxClient for MockTmuxClient {
         Err(anyhow!("Target pane not found"))
     }
 
+    fn select_layout(&mut self, _window: &WindowId, _layout: &str) -> Result<()> {
+        Ok(())
+    }
+
+    fn toggle_sync_panes(&mut self, _window: &WindowId) -> Result<bool> {
+        Ok(true)
+    }
+
+    fn swap_pane(&mut self, pane: &PaneId, up: bool) -> Result<()> {
+        for s in &mut self.sessions {
+            for w in &mut s.windows {
+                if let Some(idx) = w.panes.iter().position(|p| &p.id == pane) {
+                    if up && idx > 0 {
+                        w.panes.swap(idx, idx - 1);
+                    } else if !up && idx + 1 < w.panes.len() {
+                        w.panes.swap(idx, idx + 1);
+                    }
+                    return Ok(());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn swap_window(&mut self, window: &WindowId, left: bool) -> Result<()> {
+        for s in &mut self.sessions {
+            if let Some(idx) = s.windows.iter().position(|w| &w.id == window) {
+                if left && idx > 0 {
+                    s.windows.swap(idx, idx - 1);
+                } else if !left && idx + 1 < s.windows.len() {
+                    s.windows.swap(idx, idx + 1);
+                }
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
+
+    fn respawn_pane(&mut self, _pane: &PaneId) -> Result<()> {
+        Ok(())
+    }
+
     fn focus_pane(&self, _session: &SessionId, _window: &WindowId, _pane: &PaneId) -> Result<()> {
         Ok(())
     }

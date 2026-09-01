@@ -27,6 +27,8 @@ pub enum Action {
     SearchNext,
     SearchPrev,
     SearchSelect,
+    SearchNextCategory,
+    SearchPrevCategory,
 
     // Mutations & Modals
     PromptNewSession,
@@ -43,6 +45,19 @@ pub enum Action {
     ModalInput(char),
     ModalBackspace,
     ModalSubmit,
+
+    // Layout, Sync, & Pane actions
+    NextLayout,
+    ToggleSyncPanes,
+    SwapPaneUp,
+    SwapPaneDown,
+    MoveWindowLeft,
+    MoveWindowRight,
+    RespawnPane,
+
+    // Theme live switching
+    NextTheme,
+    PrevTheme,
 
     // Mouse Actions
     MouseClick {

@@ -209,3 +209,19 @@ fn test_kill_pane_with_confirmation() {
         initial_panes - 1
     );
 }
+
+#[test]
+fn test_respawn_pane() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+    app.focus = lazytmux::app::FocusColumn::Panes;
+
+    app.update(Action::RespawnPane).unwrap();
+    assert!(
+        app.toasts
+            .last()
+            .unwrap()
+            .message
+            .contains("Respawned pane")
+    );
+}
