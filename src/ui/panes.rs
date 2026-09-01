@@ -3,8 +3,7 @@ use crate::domain::{LayoutNode, LayoutSplit, Pane, Window};
 use crate::ui::theme::Theme;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, Paragraph};
 
 pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
     let focused = app.focus == FocusColumn::Panes;
@@ -112,29 +111,33 @@ fn render_pane_card(
         .unwrap_or(false);
 
     let border_style = if is_selected && focused {
-        Style::default()
-            .fg(Color::Cyan)
-            .add_modifier(Modifier::BOLD)
+        app.theme.border_focused
     } else if is_selected {
-        Style::default().fg(Color::LightCyan)
+        app.theme.info
     } else {
-        Style::default().fg(Color::DarkGray)
+        app.theme.border_style
     };
 
     let active_tag = if pane.active { " (active)" } else { "" };
-    let title = format!(" {} {}{} ", pane.id.0, pane.current_command, active_tag);
+    let branch_str = pane
+        .git_branch
+        .as_deref()
+        .map(|b| format!(" [{b}]"))
+        .unwrap_or_default();
+    let title = format!(
+        " {} {}{}{} ",
+        pane.id.0, pane.current_command, branch_str, active_tag
+    );
 
     let pane_block = Block::default()
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .border_type(app.theme.border_type)
         .border_style(border_style)
         .title(title)
         .title_style(if is_selected {
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD)
+            app.theme.title_focused
         } else {
-            Style::default().fg(Color::Gray)
+            app.theme.title
         });
 
     let text = pane.preview_text();

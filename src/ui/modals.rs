@@ -354,6 +354,26 @@ fn render_help(frame: &mut Frame, area: Rect, theme: &Theme) {
             Span::raw("Kill selected session / window / pane (with confirm)"),
         ]),
         Line::from(vec![
+            Span::styled("  t                     ", Style::default().fg(Color::Cyan)),
+            Span::raw("Toggle theme preset live (Tokyo Night, Catppuccin, Nord, Gruvbox, etc.)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  l                     ", Style::default().fg(Color::Cyan)),
+            Span::raw("Cycle layout preset (even-h, even-v, main-h, main-v, tiled)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  s                     ", Style::default().fg(Color::Cyan)),
+            Span::raw("Toggle synchronize-panes (broadcast typing to all panes)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  [ / ]                 ", Style::default().fg(Color::Cyan)),
+            Span::raw("Swap pane up/down (Panes) or Move window left/right (Windows)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  Ctrl + r              ", Style::default().fg(Color::Cyan)),
+            Span::raw("Respawn pane process (restart crashed shell)"),
+        ]),
+        Line::from(vec![
             Span::styled(
                 "  f                     ",
                 Style::default().fg(Color::Yellow),
@@ -370,7 +390,7 @@ fn render_help(frame: &mut Frame, area: Rect, theme: &Theme) {
         ]),
         Line::raw(""),
         Line::from(vec![Span::styled(
-            "INSPECT MODE (Space)",
+            "INSPECT MODE (Space / z)",
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),

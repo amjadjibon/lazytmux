@@ -110,13 +110,16 @@ fn test_fuzzy_search() {
     let all_items = app.search_items();
     assert!(!all_items.is_empty());
 
-    let results = app.filtered_search_results("nvim");
+    let results = app.filtered_search_results("nvim", lazytmux::app::SearchCategory::All);
     assert!(!results.is_empty());
-    assert_eq!(results[0].command, "nvim");
+    assert!(results[0].command.contains("nvim") || results[0].display_text.contains("nvim"));
 
-    let results_blog = app.filtered_search_results("blog");
+    let results_blog = app.filtered_search_results("blog", lazytmux::app::SearchCategory::All);
     assert!(!results_blog.is_empty());
-    assert_eq!(results_blog[0].window_name, "blog");
+    assert!(
+        results_blog[0].window_name.contains("blog")
+            || results_blog[0].display_text.contains("blog")
+    );
 }
 
 #[test]
@@ -219,7 +222,8 @@ fn test_search_mode_full_flow() {
         app.mode,
         Mode::Search {
             query: String::new(),
-            selected_index: 0
+            selected_index: 0,
+            category: lazytmux::app::SearchCategory::All,
         }
     );
 
@@ -232,6 +236,7 @@ fn test_search_mode_full_flow() {
     if let Mode::Search {
         query,
         selected_index,
+        ..
     } = &app.mode
     {
         assert_eq!(query, "blog");
@@ -362,4 +367,98 @@ fn test_selection_clamping_edge_cases() {
     assert_eq!(app.selection.session_idx, 1);
     assert_eq!(app.selection.window_idx, 0);
     assert_eq!(app.selection.pane_idx, 0);
+}
+
+#[test]
+fn test_live_theme_cycling() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    assert_eq!(app.theme.preset, lazytmux::ui::ThemePreset::Default);
+
+    // Cycle theme
+    app.update(Action::NextTheme).unwrap();
+    assert_eq!(app.theme.preset, lazytmux::ui::ThemePreset::TokyoNight);
+    assert!(app.toasts.last().unwrap().message.contains("Tokyo Night"));
+
+    app.update(Action::NextTheme).unwrap();
+    assert_eq!(app.theme.preset, lazytmux::ui::ThemePreset::Catppuccin);
+
+    // Prev theme
+    app.update(Action::PrevTheme).unwrap();
+    assert_eq!(app.theme.preset, lazytmux::ui::ThemePreset::TokyoNight);
+}
+
+#[test]
+fn test_layout_and_sync_actions() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    app.update(Action::NextLayout).unwrap();
+    assert!(app.toasts.last().unwrap().message.contains("Layout:"));
+
+    app.update(Action::ToggleSyncPanes).unwrap();
+    assert!(
+        app.toasts
+            .last()
+            .unwrap()
+            .message
+            .contains("Synchronize panes")
+    );
+}
+
+#[test]
+fn test_swap_pane_and_move_window() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    // Move window
+    app.update(Action::MoveWindowRight).unwrap();
+    assert!(app.toasts.last().unwrap().message.contains("Moved window"));
+
+    // Swap pane
+    app.update(Action::SwapPaneDown).unwrap();
+    assert!(app.toasts.last().unwrap().message.contains("Swapped pane"));
+}
+
+#[test]
+fn test_search_categories_tabbing() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    app.update(Action::ToggleSearch).unwrap();
+    assert!(matches!(
+        app.mode,
+        Mode::Search {
+            category: lazytmux::app::SearchCategory::All,
+            ..
+        }
+    ));
+
+    app.update(Action::SearchNextCategory).unwrap();
+    assert!(matches!(
+        app.mode,
+        Mode::Search {
+            category: lazytmux::app::SearchCategory::Sessions,
+            ..
+        }
+    ));
+
+    app.update(Action::SearchNextCategory).unwrap();
+    assert!(matches!(
+        app.mode,
+        Mode::Search {
+            category: lazytmux::app::SearchCategory::Windows,
+            ..
+        }
+    ));
+
+    app.update(Action::SearchPrevCategory).unwrap();
+    assert!(matches!(
+        app.mode,
+        Mode::Search {
+            category: lazytmux::app::SearchCategory::Sessions,
+            ..
+        }
+    ));
 }

@@ -80,12 +80,13 @@ bind-key C-s display-popup -E -w 80% -h 80% "lazytmux"
 | `Tab` | Cycle to next column |
 | `Shift + Tab` | Cycle to previous column |
 | `Enter` | Attach to session / Focus window / Handoff to pane |
-| `/` | Open interactive fuzzy finder |
+| `/` | Open interactive fuzzy finder (with category filter tabs) |
+| `t` / `T` | **Toggle theme preset live** (Tokyo Night, Catppuccin, Nord, Gruvbox, Dracula, etc.) |
 | `z` / `Space` | Toggle fullscreen zoom / inspect mode on selected pane |
 | `?` | Open keybinding help overlay |
 | `q` / `Ctrl + c` | Quit LazyTmux |
 
-### Workspace Mutations
+### Workspace Mutations & Advanced Controls
 
 | Key | Context | Action |
 | --- | --- | --- |
@@ -93,6 +94,11 @@ bind-key C-s display-popup -E -w 80% -h 80% "lazytmux"
 | `n` | **Windows** | Create new window in selected session |
 | `n` | **Panes** | Create new split pane (`v` for vertical, `h` for horizontal) |
 | `r` / `R` / `F2` | **Sessions / Windows** | Rename active session or window |
+| `l` | **Panes** | Cycle layout preset (`even-h`, `even-v`, `main-h`, `main-v`, `tiled`) |
+| `s` | **Panes** | Toggle `synchronize-panes` (broadcast typing to all panes) |
+| `[` / `]` | **Panes** | Swap pane position up / down (`swap-pane -U / -D`) |
+| `[` / `]` | **Windows** | Move window position left / right (`swap-window`) |
+| `Ctrl + r` | **Panes** | Respawn pane process (restart hung/crashed shell) |
 | `x` | **Any column** | Kill selected session, window, or pane (with confirmation) |
 | `f` | **Sessions** | Toggle session favorite bookmark (`★`) |
 | `c` | **Panes / Inspect** | Copy captured pane buffer to system clipboard |
@@ -130,8 +136,12 @@ confirm_on_kill = true
 enable_mouse = true
 
 [theme]
-accent_color = "cyan"        # Options: cyan, blue, green, yellow, magenta, red, white
-border_style = "rounded"     # Options: rounded, plain, double, thick
+# Curated Theme Presets:
+# "tokyo-night" | "catppuccin" | "nord" | "gruvbox" | "dracula" | "rose-pine" | "default"
+preset = "tokyo-night"
+
+# Border Style: "rounded" | "plain" | "double" | "thick"
+border_style = "rounded"
 ```
 
 ---
