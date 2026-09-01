@@ -92,7 +92,7 @@ bind-key C-s display-popup -E -w 80% -h 80% "lazytmux"
 | `n` | **Sessions** | Create new session (prompts for name) |
 | `n` | **Windows** | Create new window in selected session |
 | `n` | **Panes** | Create new split pane (`v` for vertical, `h` for horizontal) |
-| `R` | **Sessions / Windows** | Rename active session or window |
+| `r` / `R` / `F2` | **Sessions / Windows** | Rename active session or window |
 | `x` | **Any column** | Kill selected session, window, or pane (with confirmation) |
 | `f` | **Sessions** | Toggle session favorite bookmark (`★`) |
 | `z` | **Panes** | Toggle pane zoom state |

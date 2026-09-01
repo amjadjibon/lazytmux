@@ -237,56 +237,86 @@ impl App {
 
     pub fn handle_key_event(&mut self, key: KeyEvent) -> Option<Action> {
         match &self.mode {
-            Mode::Normal => {
-                match (key.modifiers, key.code) {
-                    (KeyModifiers::NONE, KeyCode::Char('q'))
-                    | (KeyModifiers::NONE, KeyCode::Esc) => Some(Action::Quit),
-                    (KeyModifiers::NONE, KeyCode::Char('j'))
-                    | (KeyModifiers::NONE, KeyCode::Down) => Some(Action::NavigateDown),
-                    (KeyModifiers::NONE, KeyCode::Char('k'))
-                    | (KeyModifiers::NONE, KeyCode::Up) => Some(Action::NavigateUp),
-                    (KeyModifiers::NONE, KeyCode::Char('h'))
-                    | (KeyModifiers::NONE, KeyCode::Left) => Some(Action::NavigateLeft),
-                    (KeyModifiers::NONE, KeyCode::Char('l'))
-                    | (KeyModifiers::NONE, KeyCode::Right) => Some(Action::NavigateRight),
-                    (KeyModifiers::NONE, KeyCode::Tab) => Some(Action::NextColumn),
-                    (KeyModifiers::SHIFT, KeyCode::BackTab) => Some(Action::PrevColumn),
-                    (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::OpenSelection),
-                    (KeyModifiers::NONE, KeyCode::Char('/')) => Some(Action::ToggleSearch),
-                    (KeyModifiers::NONE, KeyCode::Char('?')) => Some(Action::Help),
-                    (KeyModifiers::NONE, KeyCode::Char('r')) => Some(Action::Refresh),
-                    (KeyModifiers::NONE, KeyCode::Char(' ')) => Some(Action::ToggleInspect),
-                    (KeyModifiers::NONE, KeyCode::Char('z')) => Some(Action::ToggleZoom),
-                    (KeyModifiers::NONE, KeyCode::Char('f')) => Some(Action::ToggleFavorite),
-                    (KeyModifiers::NONE, KeyCode::Char('c')) => Some(Action::CopyPaneOutput),
-                    (KeyModifiers::NONE, KeyCode::Char('x')) => Some(Action::PromptKill),
-                    (KeyModifiers::NONE, KeyCode::Char('n')) => match self.focus {
-                        FocusColumn::Sessions => Some(Action::PromptNewSession),
-                        FocusColumn::Windows => Some(Action::PromptNewWindow),
-                        FocusColumn::Panes => Some(Action::PromptNewPane),
-                    },
-                    (KeyModifiers::NONE, KeyCode::Char('R')) => match self.focus {
+            Mode::Normal => match (key.modifiers, key.code) {
+                (m, KeyCode::Char('q') | KeyCode::Char('Q')) if m.is_empty() => Some(Action::Quit),
+                (KeyModifiers::NONE, KeyCode::Esc) => Some(Action::Quit),
+                (m, KeyCode::Char('j') | KeyCode::Char('J') | KeyCode::Down) if m.is_empty() => {
+                    Some(Action::NavigateDown)
+                }
+                (m, KeyCode::Char('k') | KeyCode::Char('K') | KeyCode::Up) if m.is_empty() => {
+                    Some(Action::NavigateUp)
+                }
+                (m, KeyCode::Char('h') | KeyCode::Char('H') | KeyCode::Left) if m.is_empty() => {
+                    Some(Action::NavigateLeft)
+                }
+                (m, KeyCode::Char('l') | KeyCode::Char('L') | KeyCode::Right) if m.is_empty() => {
+                    Some(Action::NavigateRight)
+                }
+                (KeyModifiers::NONE, KeyCode::Tab) => Some(Action::NextColumn),
+                (m, KeyCode::BackTab) if m.is_empty() || m == KeyModifiers::SHIFT => {
+                    Some(Action::PrevColumn)
+                }
+                (KeyModifiers::SHIFT, KeyCode::Tab) => Some(Action::PrevColumn),
+                (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::OpenSelection),
+                (m, KeyCode::Char('/')) if m.is_empty() => Some(Action::ToggleSearch),
+                (m, KeyCode::Char('?')) if m.is_empty() || m == KeyModifiers::SHIFT => {
+                    Some(Action::Help)
+                }
+                (KeyModifiers::CONTROL, KeyCode::Char('r') | KeyCode::Char('R'))
+                | (KeyModifiers::NONE, KeyCode::F(5)) => Some(Action::Refresh),
+                (KeyModifiers::NONE, KeyCode::Char(' ')) => Some(Action::ToggleInspect),
+                (m, KeyCode::Char('z') | KeyCode::Char('Z')) if m.is_empty() => {
+                    Some(Action::ToggleZoom)
+                }
+                (m, KeyCode::Char('f') | KeyCode::Char('F')) if m.is_empty() => {
+                    Some(Action::ToggleFavorite)
+                }
+                (m, KeyCode::Char('c') | KeyCode::Char('C')) if m.is_empty() => {
+                    Some(Action::CopyPaneOutput)
+                }
+                (m, KeyCode::Char('x') | KeyCode::Char('X')) if m.is_empty() => {
+                    Some(Action::PromptKill)
+                }
+                (m, KeyCode::Char('n') | KeyCode::Char('N')) if m.is_empty() => match self.focus {
+                    FocusColumn::Sessions => Some(Action::PromptNewSession),
+                    FocusColumn::Windows => Some(Action::PromptNewWindow),
+                    FocusColumn::Panes => Some(Action::PromptNewPane),
+                },
+                // Allow both 'r', 'R' (with or without Shift modifier), and F2 for Rename
+                (m, KeyCode::Char('r') | KeyCode::Char('R'))
+                    if m.is_empty() || m == KeyModifiers::SHIFT =>
+                {
+                    match self.focus {
                         FocusColumn::Sessions => Some(Action::PromptRenameSession),
                         FocusColumn::Windows | FocusColumn::Panes => {
                             Some(Action::PromptRenameWindow)
                         }
-                    },
-                    _ => None,
+                    }
                 }
-            }
+                (KeyModifiers::NONE, KeyCode::F(2)) => match self.focus {
+                    FocusColumn::Sessions => Some(Action::PromptRenameSession),
+                    FocusColumn::Windows | FocusColumn::Panes => Some(Action::PromptRenameWindow),
+                },
+                _ => None,
+            },
 
             Mode::PromptNewPane { .. } => match (key.modifiers, key.code) {
-                (KeyModifiers::NONE, KeyCode::Esc) | (KeyModifiers::NONE, KeyCode::Char('q')) => {
+                (KeyModifiers::NONE, KeyCode::Esc)
+                | (KeyModifiers::NONE, KeyCode::Char('q') | KeyCode::Char('Q')) => {
                     Some(Action::CancelModal)
                 }
-                (KeyModifiers::NONE, KeyCode::Char('v'))
-                | (KeyModifiers::NONE, KeyCode::Char('V')) => {
+                (m, KeyCode::Char('v') | KeyCode::Char('V'))
+                    if m.is_empty() || m == KeyModifiers::SHIFT =>
+                {
                     Some(Action::SplitPane { vertical: true })
                 }
-                (KeyModifiers::NONE, KeyCode::Char('h'))
-                | (KeyModifiers::NONE, KeyCode::Char('H'))
-                | (KeyModifiers::NONE, KeyCode::Char('s'))
-                | (KeyModifiers::NONE, KeyCode::Char('S')) => {
+                (
+                    m,
+                    KeyCode::Char('h')
+                    | KeyCode::Char('H')
+                    | KeyCode::Char('s')
+                    | KeyCode::Char('S'),
+                ) if m.is_empty() || m == KeyModifiers::SHIFT => {
                     Some(Action::SplitPane { vertical: false })
                 }
                 _ => None,
@@ -296,41 +326,58 @@ impl App {
                 (KeyModifiers::NONE, KeyCode::Esc) => Some(Action::ToggleSearch),
                 (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::SearchSelect),
                 (KeyModifiers::NONE, KeyCode::Down)
-                | (KeyModifiers::CONTROL, KeyCode::Char('n')) => Some(Action::SearchNext),
-                (KeyModifiers::NONE, KeyCode::Up) | (KeyModifiers::CONTROL, KeyCode::Char('p')) => {
+                | (KeyModifiers::CONTROL, KeyCode::Char('n') | KeyCode::Char('j')) => {
+                    Some(Action::SearchNext)
+                }
+                (KeyModifiers::NONE, KeyCode::Up)
+                | (KeyModifiers::CONTROL, KeyCode::Char('p') | KeyCode::Char('k')) => {
                     Some(Action::SearchPrev)
                 }
                 (KeyModifiers::NONE, KeyCode::Backspace) => Some(Action::SearchBackspace),
-                (KeyModifiers::NONE, KeyCode::Char(c)) => Some(Action::SearchInput(c)),
+                (m, KeyCode::Char(c)) if m.is_empty() || m == KeyModifiers::SHIFT => {
+                    Some(Action::SearchInput(c))
+                }
                 _ => None,
             },
 
             Mode::InspectPane { .. } => match (key.modifiers, key.code) {
                 (KeyModifiers::NONE, KeyCode::Esc)
-                | (KeyModifiers::NONE, KeyCode::Char('q'))
+                | (KeyModifiers::NONE, KeyCode::Char('q') | KeyCode::Char('Q'))
                 | (KeyModifiers::NONE, KeyCode::Char(' ')) => Some(Action::ToggleInspect),
-                (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => {
+                (KeyModifiers::NONE, KeyCode::Char('j') | KeyCode::Down) => {
                     Some(Action::InspectScrollDown(1))
                 }
-                (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => {
+                (KeyModifiers::NONE, KeyCode::Char('k') | KeyCode::Up) => {
                     Some(Action::InspectScrollUp(1))
                 }
                 (KeyModifiers::CONTROL, KeyCode::Char('d')) => Some(Action::InspectScrollDown(10)),
                 (KeyModifiers::CONTROL, KeyCode::Char('u')) => Some(Action::InspectScrollUp(10)),
                 (KeyModifiers::NONE, KeyCode::Char('g')) => Some(Action::InspectScrollTop),
-                (KeyModifiers::NONE, KeyCode::Char('G')) => Some(Action::InspectScrollBottom),
-                (KeyModifiers::NONE, KeyCode::Char('c')) => Some(Action::CopyPaneOutput),
+                (m, KeyCode::Char('G')) if m.is_empty() || m == KeyModifiers::SHIFT => {
+                    Some(Action::InspectScrollBottom)
+                }
+                (KeyModifiers::NONE, KeyCode::Char('c') | KeyCode::Char('C')) => {
+                    Some(Action::CopyPaneOutput)
+                }
                 (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::OpenSelection),
                 _ => None,
             },
 
             Mode::ConfirmKill(_) => match (key.modifiers, key.code) {
-                (KeyModifiers::NONE, KeyCode::Char('y')) | (KeyModifiers::NONE, KeyCode::Enter) => {
+                (m, KeyCode::Char('y') | KeyCode::Char('Y'))
+                    if m.is_empty() || m == KeyModifiers::SHIFT =>
+                {
                     Some(Action::ConfirmKill)
                 }
-                (KeyModifiers::NONE, KeyCode::Char('n'))
-                | (KeyModifiers::NONE, KeyCode::Esc)
-                | (KeyModifiers::NONE, KeyCode::Char('q')) => Some(Action::CancelModal),
+                (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::ConfirmKill),
+                (KeyModifiers::NONE, KeyCode::Esc)
+                | (
+                    KeyModifiers::NONE,
+                    KeyCode::Char('n')
+                    | KeyCode::Char('N')
+                    | KeyCode::Char('q')
+                    | KeyCode::Char('Q'),
+                ) => Some(Action::CancelModal),
                 _ => None,
             },
 
@@ -341,14 +388,20 @@ impl App {
                 (KeyModifiers::NONE, KeyCode::Esc) => Some(Action::CancelModal),
                 (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::ModalSubmit),
                 (KeyModifiers::NONE, KeyCode::Backspace) => Some(Action::ModalBackspace),
-                (KeyModifiers::NONE, KeyCode::Char(c)) => Some(Action::ModalInput(c)),
+                (m, KeyCode::Char(c)) if m.is_empty() || m == KeyModifiers::SHIFT => {
+                    Some(Action::ModalInput(c))
+                }
                 _ => None,
             },
 
             Mode::Help => match (key.modifiers, key.code) {
                 (KeyModifiers::NONE, KeyCode::Esc)
-                | (KeyModifiers::NONE, KeyCode::Char('q'))
-                | (KeyModifiers::NONE, KeyCode::Char('?')) => Some(Action::Help),
+                | (KeyModifiers::NONE, KeyCode::Char('q') | KeyCode::Char('Q')) => {
+                    Some(Action::Help)
+                }
+                (m, KeyCode::Char('?')) if m.is_empty() || m == KeyModifiers::SHIFT => {
+                    Some(Action::Help)
+                }
                 _ => None,
             },
         }

@@ -344,7 +344,7 @@ fn render_help(frame: &mut Frame, area: Rect, theme: &Theme) {
         ]),
         Line::from(vec![
             Span::styled(
-                "  R                     ",
+                "  r / R / F2            ",
                 Style::default().fg(Color::Green),
             ),
             Span::raw("Rename selected session / window"),
