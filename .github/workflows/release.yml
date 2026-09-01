@@ -48,22 +48,27 @@ jobs:
         run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Build release binary
+        env:
+          TARGET: ${{ matrix.target }}
+          USE_CROSS: ${{ matrix.use_cross }}
         run: |
-          if [ "${{ matrix.use_cross }}" = "true" ]; then
-            cross build --release --target ${{ matrix.target }}
+          if [ "$USE_CROSS" = "true" ]; then
+            cross build --release --target "$TARGET"
           else
-            cargo build --release --target ${{ matrix.target }}
+            cargo build --release --target "$TARGET"
           fi
 
       - name: Package artifacts
+        env:
+          TARGET: ${{ matrix.target }}
         shell: bash
         run: |
           TAG_NAME="${GITHUB_REF#refs/tags/}"
-          ARCHIVE_NAME="lazytmux-${TAG_NAME}-${{ matrix.target }}"
+          ARCHIVE_NAME="lazytmux-${TAG_NAME}-${TARGET}"
           TMPDIR=$(mktemp -d)
           mkdir -p "${TMPDIR}/${ARCHIVE_NAME}"
 
-          cp target/${{ matrix.target }}/release/lazytmux "${TMPDIR}/${ARCHIVE_NAME}/"
+          cp target/"${TARGET}"/release/lazytmux "${TMPDIR}/${ARCHIVE_NAME}/"
           cp README.md LICENSE "${TMPDIR}/${ARCHIVE_NAME}/"
 
           mkdir -p dist
