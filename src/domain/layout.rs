@@ -268,7 +268,7 @@ mod tests {
         let layout_str =
             "bb62,204x50,0,0{101x50,0,0,1,102x50,102,0[102x24,102,0,2,102x25,102,25,3]}";
         let node = LayoutNode::parse(layout_str).expect("Failed to parse nested layout");
-        match node {
+        match &node {
             LayoutNode::Container {
                 split,
                 children,
@@ -276,12 +276,57 @@ mod tests {
                 height,
                 ..
             } => {
-                assert_eq!(split, LayoutSplit::Horizontal);
-                assert_eq!(width, 204);
-                assert_eq!(height, 50);
+                assert_eq!(*split, LayoutSplit::Horizontal);
+                assert_eq!(*width, 204);
+                assert_eq!(*height, 50);
                 assert_eq!(children.len(), 2);
+                assert_eq!(node.dimension(split), 204);
             }
             _ => panic!("Expected container node"),
         }
+    }
+
+    #[test]
+    fn test_find_pane_at_nested() {
+        let layout_str =
+            "bb62,200x100,0,0{100x100,0,0,1,100x100,100,0[100x50,100,0,2,100x50,100,50,3]}";
+        let node = LayoutNode::parse(layout_str).expect("Failed to parse nested layout");
+        let area = ratatui::layout::Rect::new(0, 0, 100, 50);
+
+        // Coordinates in left child (%1): x: 0..50, y: 0..50
+        assert_eq!(node.find_pane_at(area, 20, 20), Some(PaneId::from("%1")));
+
+        // Coordinates in right-top child (%2): x: 50..100, y: 0..25
+        assert_eq!(node.find_pane_at(area, 75, 10), Some(PaneId::from("%2")));
+
+        // Coordinates in right-bottom child (%3): x: 50..100, y: 25..50
+        assert_eq!(node.find_pane_at(area, 75, 35), Some(PaneId::from("%3")));
+
+        // Out of bounds coordinate
+        assert_eq!(node.find_pane_at(area, 150, 20), None);
+        assert_eq!(node.find_pane_at(area, 20, 100), None);
+    }
+
+    #[test]
+    fn test_malformed_layout_strings() {
+        assert_eq!(LayoutNode::parse(""), None);
+        assert_eq!(LayoutNode::parse("   "), None);
+        assert_eq!(LayoutNode::parse("invalid"), None);
+        assert_eq!(LayoutNode::parse("bb62,invalid"), None);
+    }
+
+    #[test]
+    fn test_dimensions_and_accessors() {
+        let leaf = LayoutNode::Leaf {
+            width: 80,
+            height: 24,
+            x: 0,
+            y: 0,
+            pane_id: Some(PaneId::from("%1")),
+        };
+        assert_eq!(leaf.width(), 80);
+        assert_eq!(leaf.height(), 24);
+        assert_eq!(leaf.dimension(&LayoutSplit::Horizontal), 80);
+        assert_eq!(leaf.dimension(&LayoutSplit::Vertical), 24);
     }
 }

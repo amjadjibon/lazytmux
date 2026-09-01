@@ -65,3 +65,45 @@ impl Pane {
             .unwrap_or_else(|_| Text::from(String::from_utf8_lossy(&self.preview_raw).to_string()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pane_preview_empty() {
+        let pane = Pane::new(
+            PaneId::from("%1"),
+            WindowId::from("@1"),
+            SessionId::from("$1"),
+            1,
+            true,
+            "zsh".to_string(),
+            PathBuf::from("/tmp"),
+            80,
+            24,
+        );
+        assert_eq!(pane.preview_text(), Text::raw("No output captured"));
+    }
+
+    #[test]
+    fn test_pane_preview_with_ansi() {
+        let mut pane = Pane::new(
+            PaneId::from("%1"),
+            WindowId::from("@1"),
+            SessionId::from("$1"),
+            1,
+            true,
+            "zsh".to_string(),
+            PathBuf::from("/tmp"),
+            80,
+            24,
+        );
+        let ansi_bytes = b"\x1b[32mHello\x1b[0m \x1b[1;34mWorld\x1b[0m\n".to_vec();
+        pane.set_preview(ansi_bytes);
+        assert!(!pane.preview_lines.is_empty());
+        let text = pane.preview_text();
+        assert_eq!(text.lines.len(), 1);
+    }
+}
+

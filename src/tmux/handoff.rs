@@ -102,3 +102,32 @@ pub fn execute_handoff(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_execute_handoff_mock_mode() {
+        let res = execute_handoff(
+            &SessionId::from("$1"),
+            "work",
+            &WindowId::from("@1"),
+            &PaneId::from("%1"),
+            true,
+        );
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_environment_detection() {
+        let env = detect_environment();
+        // Since we are running in an active test / shell environment, ensure it resolves to a valid variant
+        match env {
+            TmuxEnvironment::OutsideTmux => {}
+            TmuxEnvironment::InsideTmux { .. } => {}
+            TmuxEnvironment::PopupMode => {}
+        }
+    }
+}
+

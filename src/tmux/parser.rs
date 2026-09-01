@@ -138,6 +138,42 @@ mod tests {
     }
 
     #[test]
+    fn test_assemble_tree_full_hierarchy() {
+        let sess_raw = "$0\tprod\t2\t1\n$1\tdev\t1\t0\n";
+        let win_raw = "$0\t@1\t1\tweb\t1\t2\t100x50,0,0\n$0\t@2\t2\tdb\t0\t1\t100x50,0,0\n$1\t@3\t1\teditor\t1\t1\t100x50,0,0\n";
+        let pane_raw = "$0\t@1\t%1\t0\t1\tnode\t/app\t50\t50\n$0\t@1\t%2\t1\t0\tredis\t/app\t50\t50\n$0\t@2\t%3\t0\t1\tpsql\t/db\t100\t50\n$1\t@3\t%4\t0\t1\tnvim\t/dev\t100\t50\n";
+
+        let sessions = parse_sessions(sess_raw);
+        let windows = parse_windows(win_raw);
+        let panes = parse_panes(pane_raw);
+
+        let tree = assemble_tree(sessions, windows, panes);
+        assert_eq!(tree.len(), 2);
+
+        // Prod session
+        assert_eq!(tree[0].name, "prod");
+        assert_eq!(tree[0].windows.len(), 2);
+        assert_eq!(tree[0].windows[0].name, "web");
+        assert_eq!(tree[0].windows[0].panes.len(), 2);
+        assert_eq!(tree[0].windows[0].panes[0].current_command, "node");
+        assert_eq!(tree[0].windows[1].name, "db");
+        assert_eq!(tree[0].windows[1].panes.len(), 1);
+
+        // Dev session
+        assert_eq!(tree[1].name, "dev");
+        assert_eq!(tree[1].windows.len(), 1);
+        assert_eq!(tree[1].windows[0].panes.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_empty_input() {
+        assert!(parse_sessions("").is_empty());
+        assert!(parse_sessions("   \n\n  ").is_empty());
+        assert!(parse_windows("").is_empty());
+        assert!(parse_panes("").is_empty());
+    }
+
+    #[test]
     fn test_parse_windows_and_panes_with_special_chars() {
         let win_raw = "$0\t@1\t1\tmy window | with spaces\t1\t2\t100x50,0,0\n";
         let windows = parse_windows(win_raw);
@@ -149,5 +185,13 @@ mod tests {
         assert_eq!(panes.len(), 1);
         assert_eq!(panes[0].2.current_command, "nvim /path/with spaces/file.rs");
         assert_eq!(panes[0].2.current_path, PathBuf::from("/Users/test/folder with | pipe"));
+    }
+
+    #[test]
+    fn test_unicode_and_emojis() {
+        let sess_raw = "$0\t🚀 prod-app (日本語)\t1\t1\n";
+        let sessions = parse_sessions(sess_raw);
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].name, "🚀 prod-app (日本語)");
     }
 }

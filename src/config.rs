@@ -60,3 +60,51 @@ impl Config {
 fn dirs_fallback() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config() {
+        let config = Config::default();
+        assert_eq!(config.refresh_interval_ms, 750);
+        assert_eq!(config.pane_preview_lines, 30);
+        assert!(config.confirm_on_kill);
+        assert!(config.enable_mouse);
+        assert_eq!(config.theme.accent_color, "cyan");
+        assert_eq!(config.theme.border_style, "rounded");
+    }
+
+    #[test]
+    fn test_custom_toml_deserialization() {
+        let toml_str = r#"
+            refresh_interval_ms = 500
+            pane_preview_lines = 50
+            confirm_on_kill = false
+            enable_mouse = true
+
+            [theme]
+            accent_color = "green"
+            border_style = "double"
+        "#;
+
+        let config: Config = toml::from_str(toml_str).expect("Valid TOML");
+        assert_eq!(config.refresh_interval_ms, 500);
+        assert_eq!(config.pane_preview_lines, 50);
+        assert!(!config.confirm_on_kill);
+        assert!(config.enable_mouse);
+        assert_eq!(config.theme.accent_color, "green");
+        assert_eq!(config.theme.border_style, "double");
+    }
+
+    #[test]
+    fn test_config_serialization_roundtrip() {
+        let original = Config::default();
+        let serialized = toml::to_string(&original).expect("Serialization should succeed");
+        let deserialized: Config = toml::from_str(&serialized).expect("Deserialization should succeed");
+        assert_eq!(deserialized.refresh_interval_ms, original.refresh_interval_ms);
+        assert_eq!(deserialized.theme.accent_color, original.theme.accent_color);
+    }
+}
+
