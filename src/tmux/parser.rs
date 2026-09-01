@@ -1,7 +1,7 @@
 use crate::domain::{Pane, PaneId, Session, SessionId, Window, WindowId};
 use std::path::PathBuf;
 
-pub const FIELD_DELIMITER: char = '\x1F';
+pub const FIELD_DELIMITER: char = '\t';
 
 pub fn parse_sessions(output: &str) -> Vec<Session> {
     output
@@ -128,7 +128,7 @@ mod tests {
 
     #[test]
     fn test_parse_sessions() {
-        let raw = "$0\x1Fwork\x1F4\x1F1\n$1\x1Fpersonal\x1F2\x1F0\n";
+        let raw = "$0\twork\t4\t1\n$1\tpersonal\t2\t0\n";
         let sessions = parse_sessions(raw);
         assert_eq!(sessions.len(), 2);
         assert_eq!(sessions[0].name, "work");
@@ -139,12 +139,12 @@ mod tests {
 
     #[test]
     fn test_parse_windows_and_panes_with_special_chars() {
-        let win_raw = "$0\x1F@1\x1F1\x1Fmy window | with spaces\x1F1\x1F2\x1F100x50,0,0\n";
+        let win_raw = "$0\t@1\t1\tmy window | with spaces\t1\t2\t100x50,0,0\n";
         let windows = parse_windows(win_raw);
         assert_eq!(windows.len(), 1);
         assert_eq!(windows[0].1.name, "my window | with spaces");
 
-        let pane_raw = "$0\x1F@1\x1F%1\x1F0\x1F1\x1Fnvim /path/with spaces/file.rs\x1F/Users/test/folder with | pipe\x1F120\x1F40\n";
+        let pane_raw = "$0\t@1\t%1\t0\t1\tnvim /path/with spaces/file.rs\t/Users/test/folder with | pipe\t120\t40\n";
         let panes = parse_panes(pane_raw);
         assert_eq!(panes.len(), 1);
         assert_eq!(panes[0].2.current_command, "nvim /path/with spaces/file.rs");

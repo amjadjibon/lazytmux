@@ -4,6 +4,24 @@ use lazytmux::config::Config;
 use lazytmux::tmux::MockTmuxClient;
 
 #[test]
+fn test_live_cli_client() {
+    use lazytmux::tmux::{CliTmuxClient, TmuxClient};
+    let client = CliTmuxClient::new();
+    let tree = client.fetch_full_tree().expect("fetch_full_tree should succeed");
+    println!("FETCHED SESSIONS COUNT: {}", tree.len());
+    for s in &tree {
+        println!("Session: {} (id: {}, attached: {}, windows: {})", s.name, s.id, s.attached, s.windows.len());
+        for w in &s.windows {
+            println!("  Window: {} (id: {}, active: {}, panes: {})", w.name, w.id, w.active, w.panes.len());
+            for p in &w.panes {
+                println!("    Pane: {} (cmd: {}, path: {:?})", p.id, p.current_command, p.current_path);
+            }
+        }
+    }
+    assert!(!tree.is_empty(), "Live tmux session should be discovered");
+}
+
+#[test]
 fn test_app_initialization_with_mock() {
     let mock = Box::new(MockTmuxClient::new());
     let app = App::new(mock, Config::default(), true);
