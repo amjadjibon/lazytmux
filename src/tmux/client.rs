@@ -20,6 +20,7 @@ pub trait TmuxClient: Send + Sync {
 
     fn kill_pane(&mut self, pane: &PaneId) -> Result<()>;
     fn zoom_pane(&mut self, pane: &PaneId) -> Result<()>;
+    fn split_pane(&mut self, pane: &PaneId, vertical: bool) -> Result<PaneId>;
 
     // Focus & Navigation
     fn focus_pane(&self, session: &SessionId, window: &WindowId, pane: &PaneId) -> Result<()>;

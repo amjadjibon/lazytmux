@@ -358,6 +358,34 @@ impl TmuxClient for MockTmuxClient {
         Ok(())
     }
 
+    fn split_pane(&mut self, pane: &PaneId, _vertical: bool) -> Result<PaneId> {
+        self.counter += 1;
+        let new_pane_id = PaneId(format!("%{}", self.counter * 100));
+
+        for s in &mut self.sessions {
+            for w in &mut s.windows {
+                if w.panes.iter().any(|p| &p.id == pane) {
+                    let next_idx = w.panes.len() as u32 + 1;
+                    let mut new_pane = Pane::new(
+                        new_pane_id.clone(),
+                        w.id.clone(),
+                        s.id.clone(),
+                        next_idx,
+                        true,
+                        "zsh".to_string(),
+                        PathBuf::from("~"),
+                        80,
+                        24,
+                    );
+                    new_pane.set_preview(b"New terminal pane initialized.\n$ ".to_vec());
+                    w.panes.push(new_pane);
+                    return Ok(new_pane_id);
+                }
+            }
+        }
+        Err(anyhow!("Target pane not found"))
+    }
+
     fn focus_pane(&self, _session: &SessionId, _window: &WindowId, _pane: &PaneId) -> Result<()> {
         Ok(())
     }

@@ -148,6 +148,12 @@ impl TmuxClient for CliTmuxClient {
         Ok(())
     }
 
+    fn split_pane(&mut self, pane: &PaneId, vertical: bool) -> Result<PaneId> {
+        let flag = if vertical { "-h" } else { "-v" };
+        let out = self.run_cmd(&["split-window", flag, "-t", &pane.0, "-P", "-F", "#{pane_id}"])?;
+        Ok(PaneId::from(out.trim()))
+    }
+
     fn focus_pane(&self, session: &SessionId, window: &WindowId, pane: &PaneId) -> Result<()> {
         // Run select commands
         let _ = self.run_cmd(&["select-window", "-t", &window.0]);
