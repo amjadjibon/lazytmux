@@ -12,6 +12,7 @@ pub struct Pane {
     pub active: bool,
     pub current_command: String,
     pub current_path: PathBuf,
+    pub git_branch: Option<String>,
     pub width: u16,
     pub height: u16,
     pub preview_lines: Vec<String>,
@@ -31,6 +32,7 @@ impl Pane {
         width: u16,
         height: u16,
     ) -> Self {
+        let git_branch = detect_git_branch(&current_path);
         Self {
             id,
             window_id,
@@ -39,6 +41,7 @@ impl Pane {
             active,
             current_command,
             current_path,
+            git_branch,
             width,
             height,
             preview_lines: Vec::new(),
@@ -64,6 +67,44 @@ impl Pane {
             .into_text()
             .unwrap_or_else(|_| Text::from(String::from_utf8_lossy(&self.preview_raw).to_string()))
     }
+}
+
+pub fn detect_git_branch(path: &std::path::Path) -> Option<String> {
+    let mut current = path;
+    loop {
+        let git_dir = current.join(".git");
+        if git_dir.is_dir() {
+            let head_file = git_dir.join("HEAD");
+            if let Ok(content) = std::fs::read_to_string(head_file) {
+                let trimmed = content.trim();
+                if let Some(branch) = trimmed.strip_prefix("ref: refs/heads/") {
+                    return Some(branch.to_string());
+                } else if !trimmed.is_empty() && trimmed.len() >= 7 {
+                    return Some(trimmed[..7].to_string());
+                }
+            }
+            return None;
+        } else if git_dir.is_file() {
+            if let Ok(content) = std::fs::read_to_string(git_dir)
+                && let Some(gitdir_path) = content.trim().strip_prefix("gitdir:")
+            {
+                let head_file = std::path::PathBuf::from(gitdir_path.trim()).join("HEAD");
+                if let Ok(head_content) = std::fs::read_to_string(head_file) {
+                    let trimmed = head_content.trim();
+                    if let Some(branch) = trimmed.strip_prefix("ref: refs/heads/") {
+                        return Some(branch.to_string());
+                    }
+                }
+            }
+            return None;
+        }
+
+        match current.parent() {
+            Some(parent) if parent != current => current = parent,
+            _ => break,
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -104,5 +145,16 @@ mod tests {
         assert!(!pane.preview_lines.is_empty());
         let text = pane.preview_text();
         assert_eq!(text.lines.len(), 1);
+    }
+
+    #[test]
+    fn test_detect_git_branch() {
+        let repo_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let branch = detect_git_branch(&repo_path);
+        assert!(
+            branch.is_some(),
+            "Current workspace should be in a git repo"
+        );
+        assert_eq!(branch.unwrap(), "main");
     }
 }
