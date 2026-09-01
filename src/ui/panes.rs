@@ -1,4 +1,5 @@
 use crate::app::{App, FocusColumn};
+use crate::domain::{LayoutNode, LayoutSplit, Pane, Window};
 use crate::ui::theme::Theme;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -31,6 +32,113 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
     let inner_area = main_block.inner(area);
     frame.render_widget(main_block, area);
 
+    // Try parsing the tmux window_layout AST to render true 2D geometry
+    if let Some(root_node) = LayoutNode::parse(&window.layout_str) {
+        render_layout_node(&root_node, window, app, frame, inner_area, focused);
+    } else {
+        render_fallback(window, app, frame, inner_area, focused);
+    }
+}
+
+fn render_layout_node(
+    node: &LayoutNode,
+    window: &Window,
+    app: &App,
+    frame: &mut Frame,
+    area: Rect,
+    focused: bool,
+) {
+    match node {
+        LayoutNode::Leaf { pane_id, .. } => {
+            if let Some(id) = pane_id {
+                if let Some(pane) = window.get_pane(id) {
+                    render_pane_card(pane, window, app, frame, area, focused);
+                }
+            } else if let Some(pane) = window.panes.first() {
+                render_pane_card(pane, window, app, frame, area, focused);
+            }
+        }
+        LayoutNode::Container {
+            split, children, ..
+        } => {
+            if children.is_empty() {
+                return;
+            }
+
+            let dir = match split {
+                LayoutSplit::Horizontal => Direction::Horizontal,
+                LayoutSplit::Vertical => Direction::Vertical,
+            };
+
+            let total_dim: u32 = children.iter().map(|c| c.dimension(split) as u32).sum();
+            let constraints: Vec<Constraint> = children
+                .iter()
+                .map(|c| {
+                    let dim = c.dimension(split) as u32;
+                    if total_dim > 0 {
+                        Constraint::Ratio(dim.max(1), total_dim.max(1))
+                    } else {
+                        Constraint::Ratio(1, children.len() as u32)
+                    }
+                })
+                .collect();
+
+            let chunks = Layout::default()
+                .direction(dir)
+                .constraints(constraints)
+                .split(area);
+
+            for (idx, child) in children.iter().enumerate() {
+                if idx < chunks.len() {
+                    render_layout_node(child, window, app, frame, chunks[idx], focused);
+                }
+            }
+        }
+    }
+}
+
+fn render_pane_card(
+    pane: &Pane,
+    window: &Window,
+    app: &App,
+    frame: &mut Frame,
+    area: Rect,
+    focused: bool,
+) {
+    let is_selected = window
+        .panes
+        .get(app.selection.pane_idx)
+        .map(|p| p.id == pane.id)
+        .unwrap_or(false);
+
+    let border_style = if is_selected && focused {
+        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+    } else if is_selected {
+        Style::default().fg(Color::LightCyan)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
+    let active_tag = if pane.active { " (active)" } else { "" };
+    let title = format!(" {} {}{} ", pane.id.0, pane.current_command, active_tag);
+
+    let pane_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(border_style)
+        .title(title)
+        .title_style(if is_selected {
+            Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Gray)
+        });
+
+    let text = pane.preview_text();
+    let preview_widget = Paragraph::new(text).block(pane_block);
+    frame.render_widget(preview_widget, area);
+}
+
+fn render_fallback(window: &Window, app: &App, frame: &mut Frame, area: Rect, focused: bool) {
     let pane_count = window.panes.len();
     let constraints: Vec<Constraint> = (0..pane_count)
         .map(|_| Constraint::Ratio(1, pane_count as u32))
@@ -39,42 +147,12 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
     let pane_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(constraints)
-        .split(inner_area);
+        .split(area);
 
     for (idx, pane) in window.panes.iter().enumerate() {
         if idx >= pane_chunks.len() {
             break;
         }
-        let pane_area = pane_chunks[idx];
-        let is_selected = idx == app.selection.pane_idx;
-
-        let border_style = if is_selected && focused {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
-        } else if is_selected {
-            Style::default().fg(Color::LightCyan)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
-
-        let active_tag = if pane.active { " (active)" } else { "" };
-        let title = format!(
-            " {} {}{} ",
-            pane.id.0, pane.current_command, active_tag
-        );
-
-        let pane_block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(border_style)
-            .title(title)
-            .title_style(if is_selected {
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::Gray)
-            });
-
-        let text = pane.preview_text();
-        let preview_widget = Paragraph::new(text).block(pane_block);
-        frame.render_widget(preview_widget, pane_area);
+        render_pane_card(pane, window, app, frame, pane_chunks[idx], focused);
     }
 }

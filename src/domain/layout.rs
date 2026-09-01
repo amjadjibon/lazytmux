@@ -44,6 +44,27 @@ impl LayoutNode {
         let mut chars = body.chars().peekable();
         parse_node(&mut chars)
     }
+
+    pub fn width(&self) -> u16 {
+        match self {
+            LayoutNode::Leaf { width, .. } => *width,
+            LayoutNode::Container { width, .. } => *width,
+        }
+    }
+
+    pub fn height(&self) -> u16 {
+        match self {
+            LayoutNode::Leaf { height, .. } => *height,
+            LayoutNode::Container { height, .. } => *height,
+        }
+    }
+
+    pub fn dimension(&self, split: &LayoutSplit) -> u16 {
+        match split {
+            LayoutSplit::Horizontal => self.width(),
+            LayoutSplit::Vertical => self.height(),
+        }
+    }
 }
 
 fn parse_number<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) -> Option<u16> {
