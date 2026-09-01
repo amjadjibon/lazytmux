@@ -126,3 +126,64 @@ fn test_create_and_split_pane() {
     assert_eq!(app.mode, Mode::Normal);
     assert_eq!(app.selected_window().unwrap().panes.len(), initial_panes + 1);
 }
+
+#[test]
+fn test_rename_window() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    // Focus windows column
+    app.focus = lazytmux::app::FocusColumn::Windows;
+    app.update(Action::PromptRenameWindow).unwrap();
+
+    if let Mode::PromptRenameWindow { input, .. } = &app.mode {
+        assert_eq!(input, "editor");
+    } else {
+        panic!("Expected PromptRenameWindow mode");
+    }
+
+    // Clear and rename to "code"
+    app.mode = Mode::PromptRenameWindow {
+        window_id: lazytmux::domain::WindowId::from("@1"),
+        input: "code".to_string(),
+    };
+    app.update(Action::ModalSubmit).unwrap();
+    assert_eq!(app.selected_window().unwrap().name, "code");
+}
+
+#[test]
+fn test_kill_window_with_confirmation() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    app.focus = lazytmux::app::FocusColumn::Windows;
+    let initial_count = app.selected_session().unwrap().windows.len();
+
+    // Trigger prompt kill
+    app.update(Action::PromptKill).unwrap();
+    assert!(matches!(app.mode, Mode::ConfirmKill(KillTarget::Window(..))));
+
+    // Confirm kill
+    app.update(Action::ConfirmKill).unwrap();
+    assert_eq!(app.mode, Mode::Normal);
+    assert_eq!(app.selected_session().unwrap().windows.len(), initial_count - 1);
+}
+
+#[test]
+fn test_kill_pane_with_confirmation() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    app.focus = lazytmux::app::FocusColumn::Panes;
+    let initial_panes = app.selected_window().unwrap().panes.len();
+
+    // Trigger prompt kill
+    app.update(Action::PromptKill).unwrap();
+    assert!(matches!(app.mode, Mode::ConfirmKill(KillTarget::Pane(..))));
+
+    // Confirm kill
+    app.update(Action::ConfirmKill).unwrap();
+    assert_eq!(app.mode, Mode::Normal);
+    assert_eq!(app.selected_window().unwrap().panes.len(), initial_panes - 1);
+}
+

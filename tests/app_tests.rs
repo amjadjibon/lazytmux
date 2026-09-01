@@ -193,3 +193,135 @@ fn test_mouse_selection() {
 
     assert_eq!(app.focus, lazytmux::app::FocusColumn::Panes);
 }
+
+#[test]
+fn test_search_mode_full_flow() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    // Open search mode
+    app.update(Action::ToggleSearch).unwrap();
+    assert_eq!(
+        app.mode,
+        Mode::Search {
+            query: String::new(),
+            selected_index: 0
+        }
+    );
+
+    // Type query: "blog"
+    app.update(Action::SearchInput('b')).unwrap();
+    app.update(Action::SearchInput('l')).unwrap();
+    app.update(Action::SearchInput('o')).unwrap();
+    app.update(Action::SearchInput('g')).unwrap();
+
+    if let Mode::Search { query, selected_index } = &app.mode {
+        assert_eq!(query, "blog");
+        assert_eq!(*selected_index, 0);
+    } else {
+        panic!("Expected Search mode");
+    }
+
+    // Backspace
+    app.update(Action::SearchBackspace).unwrap();
+    if let Mode::Search { query, .. } = &app.mode {
+        assert_eq!(query, "blo");
+    }
+
+    // Select result -> triggers Handoff
+    let action = app.update(Action::SearchSelect).unwrap();
+    assert_eq!(app.mode, Mode::Normal);
+    assert!(matches!(action, Some(Action::Handoff { .. })));
+}
+
+#[test]
+fn test_toggle_favorite() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    // Initial state: session 0 ("work") is favorite
+    assert!(app.selected_session().unwrap().is_favorite);
+
+    // Toggle favorite
+    app.update(Action::ToggleFavorite).unwrap();
+    assert!(!app.selected_session().unwrap().is_favorite);
+
+    // Toggle back
+    app.update(Action::ToggleFavorite).unwrap();
+    assert!(app.selected_session().unwrap().is_favorite);
+}
+
+#[test]
+fn test_toggle_zoom() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    let res = app.update(Action::ToggleZoom).unwrap();
+    assert!(res.is_none());
+    assert!(!app.toasts.is_empty());
+}
+
+#[test]
+fn test_help_modal_toggle() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    assert_eq!(app.mode, Mode::Normal);
+    app.update(Action::Help).unwrap();
+    assert_eq!(app.mode, Mode::Help);
+
+    app.update(Action::Help).unwrap();
+    assert_eq!(app.mode, Mode::Normal);
+}
+
+#[test]
+fn test_copy_pane_output() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    app.update(Action::CopyPaneOutput).unwrap();
+    assert!(!app.toasts.is_empty());
+    assert!(app.toasts.last().unwrap().message.contains("Copied"));
+}
+
+#[test]
+fn test_mouse_scroll_inspect() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    app.mode = Mode::InspectPane {
+        pane_id: lazytmux::domain::PaneId::from("%1"),
+        scroll_offset: 0,
+    };
+
+    // Mouse scroll down in inspect mode
+    app.update(Action::MouseScrollDown { column: 10, row: 10 }).unwrap();
+    if let Mode::InspectPane { scroll_offset, .. } = app.mode {
+        assert_eq!(scroll_offset, 3);
+    } else {
+        panic!("Expected InspectPane mode");
+    }
+
+    // Mouse scroll up in inspect mode
+    app.update(Action::MouseScrollUp { column: 10, row: 10 }).unwrap();
+    if let Mode::InspectPane { scroll_offset, .. } = app.mode {
+        assert_eq!(scroll_offset, 0);
+    }
+}
+
+#[test]
+fn test_selection_clamping_edge_cases() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    // Session 0 has 2 windows
+    app.selection.window_idx = 1;
+    assert_eq!(app.selection.window_idx, 1);
+
+    // Navigate down to Session 1 ("personal", which only has 1 window)
+    app.update(Action::NavigateDown).unwrap();
+    assert_eq!(app.selection.session_idx, 1);
+    assert_eq!(app.selection.window_idx, 0);
+    assert_eq!(app.selection.pane_idx, 0);
+}
+
