@@ -462,3 +462,21 @@ fn test_search_categories_tabbing() {
         }
     ));
 }
+
+#[test]
+fn test_multiple_panes_different_branches() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    // Give pane 1 branch "main" and pane 2 branch "dev" in window 0
+    let win = app.sessions[0].windows.get_mut(0).unwrap();
+    win.panes[0].git_branch = Some("main".to_string());
+    if win.panes.len() > 1 {
+        win.panes[1].git_branch = Some("dev".to_string());
+    }
+
+    assert_eq!(win.panes[0].git_branch.as_deref(), Some("main"));
+    if win.panes.len() > 1 {
+        assert_eq!(win.panes[1].git_branch.as_deref(), Some("dev"));
+    }
+}

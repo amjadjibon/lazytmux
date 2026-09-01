@@ -65,12 +65,20 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
             let pane_count_str = format!(" ({})", window.panes.len());
             let count_span = Span::styled(pane_count_str, theme.dim);
 
-            let git_branch_span = window
-                .panes
-                .iter()
-                .find_map(|p| p.git_branch.as_deref())
-                .map(|b| Span::styled(format!(" [{b}]"), theme.info))
-                .unwrap_or_else(|| Span::raw(""));
+            let mut unique_branches = Vec::new();
+            for p in &window.panes {
+                if let Some(ref b) = p.git_branch {
+                    if !unique_branches.contains(&b.as_str()) {
+                        unique_branches.push(b.as_str());
+                    }
+                }
+            }
+
+            let git_branch_span = if !unique_branches.is_empty() {
+                Span::styled(format!(" [{}]", unique_branches.join(", ")), theme.info)
+            } else {
+                Span::raw("")
+            };
 
             let line = Line::from(vec![
                 cursor_span,
