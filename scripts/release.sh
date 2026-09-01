@@ -136,9 +136,19 @@ log_success "Created archive: dist/${ARCHIVE_NAME}.tar.gz"
 if [[ "$DRY_RUN" == false ]]; then
     log_info "Creating git commit and tag v${VERSION}..."
     git add Cargo.toml Cargo.lock
-    git commit -m "chore(release): bump version to v${VERSION}"
-    git tag -a "v${VERSION}" -m "Release v${VERSION}"
-    log_success "Git tag v${VERSION} created."
+    if ! git diff --cached --quiet; then
+        git commit -m "chore(release): bump version to v${VERSION}"
+        log_success "Committed version bump to v${VERSION}."
+    else
+        log_info "No changes to commit in Cargo.toml/Cargo.lock."
+    fi
+
+    if ! git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+        git tag -a "v${VERSION}" -m "Release v${VERSION}"
+        log_success "Git tag v${VERSION} created."
+    else
+        log_warn "Git tag v${VERSION} already exists, skipping tag creation."
+    fi
 
     if [[ "$PUBLISH" == true ]]; then
         log_info "Publishing to crates.io..."

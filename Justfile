@@ -85,8 +85,14 @@ release VERSION:
     just bump {{VERSION}}
     cargo build --release
     git add Cargo.toml Cargo.lock
-    git commit -m "chore(release): bump version to v{{VERSION}}"
-    git tag -a "v{{VERSION}}" -m "Release v{{VERSION}}"
+    @if ! git diff --cached --quiet; then \
+        git commit -m "chore(release): bump version to v{{VERSION}}"; \
+    fi
+    @if ! git rev-parse "v{{VERSION}}" >/dev/null 2>&1; then \
+        git tag -a "v{{VERSION}}" -m "Release v{{VERSION}}"; \
+    else \
+        echo "==> Git tag v{{VERSION}} already exists, skipping tag creation."; \
+    fi
     just package
     @echo ""
     @echo "=========================================="
