@@ -6,36 +6,33 @@ use lazytmux::tmux::MockTmuxClient;
 #[test]
 fn test_live_cli_client() {
     use lazytmux::tmux::{CliTmuxClient, TmuxClient};
-    let client = CliTmuxClient::new();
-    let tree = client
-        .fetch_full_tree()
-        .expect("fetch_full_tree should succeed");
-    println!("FETCHED SESSIONS COUNT: {}", tree.len());
-    for s in &tree {
-        println!(
-            "Session: {} (id: {}, attached: {}, windows: {})",
-            s.name,
-            s.id,
-            s.attached,
-            s.windows.len()
-        );
-        for w in &s.windows {
-            println!(
-                "  Window: {} (id: {}, active: {}, panes: {})",
-                w.name,
-                w.id,
-                w.active,
-                w.panes.len()
-            );
-            for p in &w.panes {
-                println!(
-                    "    Pane: {} (cmd: {}, path: {:?})",
-                    p.id, p.current_command, p.current_path
-                );
-            }
-        }
+    use std::process::Command;
+
+    // Check if tmux CLI is installed in environment
+    if Command::new("tmux").arg("-V").output().is_err() {
+        println!("tmux CLI not available, skipping live test");
+        return;
     }
-    assert!(!tree.is_empty(), "Live tmux session should be discovered");
+
+    // Spawn a temporary headless test session to ensure at least one session exists
+    let test_session = "lazytmux_ci_test_session";
+    let _ = Command::new("tmux")
+        .args(["new-session", "-d", "-s", test_session, "-n", "ci_window"])
+        .output();
+
+    let client = CliTmuxClient::new();
+    let tree_res = client.fetch_full_tree();
+
+    // Always cleanup the temporary test session
+    let _ = Command::new("tmux")
+        .args(["kill-session", "-t", test_session])
+        .output();
+
+    let tree = tree_res.expect("fetch_full_tree should succeed");
+    assert!(
+        !tree.is_empty(),
+        "Live tmux session should be discovered when tmux is running"
+    );
 }
 
 #[test]
