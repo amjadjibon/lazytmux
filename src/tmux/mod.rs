@@ -6,5 +6,5 @@ pub mod parser;
 
 pub use cli::CliTmuxClient;
 pub use client::TmuxClient;
-pub use handoff::{detect_environment, execute_handoff, TmuxEnvironment};
+pub use handoff::{TmuxEnvironment, detect_environment, execute_handoff};
 pub use mock::MockTmuxClient;

@@ -38,7 +38,14 @@ pub fn parse_windows(output: &str) -> Vec<(SessionId, Window)> {
             let active = fields[4] == "1";
             let layout_str = fields[6].to_string();
 
-            let window = Window::new(window_id, session_id.clone(), index, name, active, layout_str);
+            let window = Window::new(
+                window_id,
+                session_id.clone(),
+                index,
+                name,
+                active,
+                layout_str,
+            );
             Some((session_id, window))
         })
         .collect()
@@ -184,7 +191,10 @@ mod tests {
         let panes = parse_panes(pane_raw);
         assert_eq!(panes.len(), 1);
         assert_eq!(panes[0].2.current_command, "nvim /path/with spaces/file.rs");
-        assert_eq!(panes[0].2.current_path, PathBuf::from("/Users/test/folder with | pipe"));
+        assert_eq!(
+            panes[0].2.current_path,
+            PathBuf::from("/Users/test/folder with | pipe")
+        );
     }
 
     #[test]

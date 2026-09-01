@@ -2,16 +2,16 @@ use color_eyre::eyre::eyre;
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::execute;
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
 use lazytmux::action::Action;
 use lazytmux::app::App;
 use lazytmux::config::Config;
 use lazytmux::event::{AppEvent, EventHandler};
-use lazytmux::tmux::{execute_handoff, CliTmuxClient, MockTmuxClient, TmuxClient};
+use lazytmux::tmux::{CliTmuxClient, MockTmuxClient, TmuxClient, execute_handoff};
 use lazytmux::ui;
-use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
 use std::io::{self, stdout};
 
 fn main() -> color_eyre::Result<()> {
@@ -39,9 +39,16 @@ fn main() -> color_eyre::Result<()> {
     let config = Config::load_or_default();
 
     // Check if tmux CLI is available when not in mock mode
-    if !is_mock && std::process::Command::new("tmux").arg("-V").output().is_err() {
+    if !is_mock
+        && std::process::Command::new("tmux")
+            .arg("-V")
+            .output()
+            .is_err()
+    {
         eprintln!("Error: 'tmux' command not found in PATH.");
-        eprintln!("Tip: You can test LazyTmux without a live tmux server by running: lazytmux --mock");
+        eprintln!(
+            "Tip: You can test LazyTmux without a live tmux server by running: lazytmux --mock"
+        );
         std::process::exit(1);
     }
 

@@ -1,11 +1,11 @@
 use crate::action::ToastLevel;
 use crate::app::{App, FocusColumn};
 use crate::ui::theme::Theme;
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
-use ratatui::Frame;
 
 pub fn render_header(app: &App, frame: &mut Frame, area: Rect, _theme: &Theme) {
     let total_sessions = app.sessions.len();
@@ -22,7 +22,9 @@ pub fn render_header(app: &App, frame: &mut Frame, area: Rect, _theme: &Theme) {
     let header_line = Line::from(vec![
         Span::styled(
             " 󰒋 LazyTmux",
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::styled(mode_str, Style::default().fg(Color::Yellow)),
         Span::styled(" │", Style::default().fg(Color::DarkGray)),
@@ -34,8 +36,14 @@ pub fn render_header(app: &App, frame: &mut Frame, area: Rect, _theme: &Theme) {
 }
 
 pub fn render_breadcrumbs(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
-    let s_name = app.selected_session().map(|s| s.name.as_str()).unwrap_or("-");
-    let w_name = app.selected_window().map(|w| w.name.as_str()).unwrap_or("-");
+    let s_name = app
+        .selected_session()
+        .map(|s| s.name.as_str())
+        .unwrap_or("-");
+    let w_name = app
+        .selected_window()
+        .map(|w| w.name.as_str())
+        .unwrap_or("-");
     let (p_id, p_cmd, p_path) = match app.selected_pane() {
         Some(p) => (
             p.id.0.as_str(),
@@ -90,11 +98,23 @@ pub fn render_footer(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
 
     let hints = match app.focus {
         FocusColumn::Sessions => vec![
-            Span::styled(" h/l ", Style::default().bg(Color::DarkGray).fg(Color::White)),
+            Span::styled(
+                " h/l ",
+                Style::default().bg(Color::DarkGray).fg(Color::White),
+            ),
             Span::raw(" col "),
-            Span::styled(" j/k ", Style::default().bg(Color::DarkGray).fg(Color::White)),
+            Span::styled(
+                " j/k ",
+                Style::default().bg(Color::DarkGray).fg(Color::White),
+            ),
             Span::raw(" move "),
-            Span::styled(" Enter ", Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                " Enter ",
+                Style::default()
+                    .bg(Color::Cyan)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" attach "),
             Span::styled(" n ", Style::default().bg(Color::DarkGray).fg(Color::White)),
             Span::raw(" new "),
@@ -110,11 +130,23 @@ pub fn render_footer(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
             Span::raw(" help"),
         ],
         FocusColumn::Windows => vec![
-            Span::styled(" h/l ", Style::default().bg(Color::DarkGray).fg(Color::White)),
+            Span::styled(
+                " h/l ",
+                Style::default().bg(Color::DarkGray).fg(Color::White),
+            ),
             Span::raw(" col "),
-            Span::styled(" j/k ", Style::default().bg(Color::DarkGray).fg(Color::White)),
+            Span::styled(
+                " j/k ",
+                Style::default().bg(Color::DarkGray).fg(Color::White),
+            ),
             Span::raw(" move "),
-            Span::styled(" Enter ", Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                " Enter ",
+                Style::default()
+                    .bg(Color::Cyan)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" select "),
             Span::styled(" n ", Style::default().bg(Color::DarkGray).fg(Color::White)),
             Span::raw(" new "),
@@ -128,15 +160,30 @@ pub fn render_footer(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
             Span::raw(" help"),
         ],
         FocusColumn::Panes => vec![
-            Span::styled(" h/l ", Style::default().bg(Color::DarkGray).fg(Color::White)),
+            Span::styled(
+                " h/l ",
+                Style::default().bg(Color::DarkGray).fg(Color::White),
+            ),
             Span::raw(" col "),
-            Span::styled(" j/k ", Style::default().bg(Color::DarkGray).fg(Color::White)),
+            Span::styled(
+                " j/k ",
+                Style::default().bg(Color::DarkGray).fg(Color::White),
+            ),
             Span::raw(" move "),
-            Span::styled(" Enter ", Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                " Enter ",
+                Style::default()
+                    .bg(Color::Cyan)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" focus "),
             Span::styled(" n ", Style::default().bg(Color::DarkGray).fg(Color::White)),
             Span::raw(" new "),
-            Span::styled(" Space ", Style::default().bg(Color::DarkGray).fg(Color::White)),
+            Span::styled(
+                " Space ",
+                Style::default().bg(Color::DarkGray).fg(Color::White),
+            ),
             Span::raw(" inspect "),
             Span::styled(" z ", Style::default().bg(Color::DarkGray).fg(Color::White)),
             Span::raw(" zoom "),

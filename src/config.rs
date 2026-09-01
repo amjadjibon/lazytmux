@@ -44,7 +44,8 @@ impl Config {
         ProjectDirs::from("com", "lazytmux", "lazytmux")
             .map(|dirs| dirs.config_dir().join("config.toml"))
             .or_else(|| {
-                dirs_fallback().map(|home| home.join(".config").join("lazytmux").join("config.toml"))
+                dirs_fallback()
+                    .map(|home| home.join(".config").join("lazytmux").join("config.toml"))
             })
     }
 
@@ -102,9 +103,12 @@ mod tests {
     fn test_config_serialization_roundtrip() {
         let original = Config::default();
         let serialized = toml::to_string(&original).expect("Serialization should succeed");
-        let deserialized: Config = toml::from_str(&serialized).expect("Deserialization should succeed");
-        assert_eq!(deserialized.refresh_interval_ms, original.refresh_interval_ms);
+        let deserialized: Config =
+            toml::from_str(&serialized).expect("Deserialization should succeed");
+        assert_eq!(
+            deserialized.refresh_interval_ms,
+            original.refresh_interval_ms
+        );
         assert_eq!(deserialized.theme.accent_color, original.theme.accent_color);
     }
 }
-

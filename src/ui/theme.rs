@@ -25,10 +25,16 @@ impl Default for Theme {
     fn default() -> Self {
         Self {
             border_style: Style::default().fg(Color::DarkGray),
-            border_focused: Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            border_focused: Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
             border_type: BorderType::Rounded,
-            title: Style::default().fg(Color::Gray).add_modifier(Modifier::BOLD),
-            title_focused: Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            title: Style::default()
+                .fg(Color::Gray)
+                .add_modifier(Modifier::BOLD),
+            title_focused: Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
             selection: Style::default()
                 .bg(Color::Rgb(30, 45, 65))
                 .fg(Color::White)
@@ -36,13 +42,21 @@ impl Default for Theme {
             attached_session: Style::default().fg(Color::Green),
             detached_session: Style::default().fg(Color::DarkGray),
             favorite: Style::default().fg(Color::Yellow),
-            active_item: Style::default().fg(Color::LightCyan).add_modifier(Modifier::BOLD),
+            active_item: Style::default()
+                .fg(Color::LightCyan)
+                .add_modifier(Modifier::BOLD),
             dim: Style::default().fg(Color::DarkGray),
             error: Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            success: Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
-            warning: Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            success: Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+            warning: Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
             info: Style::default().fg(Color::Cyan),
-            breadcrumb_label: Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            breadcrumb_label: Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
             breadcrumb_val: Style::default().fg(Color::White),
         }
     }

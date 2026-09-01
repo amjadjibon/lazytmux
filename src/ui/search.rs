@@ -1,14 +1,17 @@
 use crate::app::App;
 use crate::ui::theme::Theme;
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph};
-use ratatui::Frame;
 
 pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
     let (query, selected_index) = match &app.mode {
-        crate::app::Mode::Search { query, selected_index } => (query, *selected_index),
+        crate::app::Mode::Search {
+            query,
+            selected_index,
+        } => (query, *selected_index),
         _ => return,
     };
 
@@ -28,12 +31,26 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
     let input_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .border_style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
         .title(" Fuzzy Search Everything ");
 
     let input_line = Line::from(vec![
-        Span::styled(" > ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::styled(query, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " > ",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            query,
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled("█", Style::default().fg(Color::Cyan)),
     ]);
 
@@ -62,7 +79,12 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
                 let is_selected = idx == selected_index;
 
                 let cursor_span = if is_selected {
-                    Span::styled("▶ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+                    Span::styled(
+                        "▶ ",
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    )
                 } else {
                     Span::raw("  ")
                 };
@@ -113,11 +135,23 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
 
     // Footer Hint
     let footer_line = Line::from(vec![
-        Span::styled(" Enter ", Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " Enter ",
+            Style::default()
+                .bg(Color::Cyan)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" Jump to Pane  "),
-        Span::styled(" ↑/↓ / Ctrl+p/n ", Style::default().bg(Color::DarkGray).fg(Color::White)),
+        Span::styled(
+            " ↑/↓ / Ctrl+p/n ",
+            Style::default().bg(Color::DarkGray).fg(Color::White),
+        ),
         Span::raw(" Navigate  "),
-        Span::styled(" Esc ", Style::default().bg(Color::DarkGray).fg(Color::White)),
+        Span::styled(
+            " Esc ",
+            Style::default().bg(Color::DarkGray).fg(Color::White),
+        ),
         Span::raw(" Close"),
     ]);
 

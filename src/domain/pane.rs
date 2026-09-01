@@ -106,4 +106,3 @@ mod tests {
         assert_eq!(text.lines.len(), 1);
     }
 }
-

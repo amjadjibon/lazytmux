@@ -10,8 +10,8 @@ pub mod windows;
 
 use crate::app::App;
 use layout::AppLayout;
-use theme::Theme;
 use ratatui::Frame;
+use theme::Theme;
 
 pub fn render(app: &App, frame: &mut Frame) {
     let theme = Theme::default();

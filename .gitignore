@@ -1,3 +1,13 @@
 /target
 /dist
 
+.env
+.env.*
+!.env.example
+
+# Cargo
+.cargo/registry
+.cargo/git
+
+.idea
+.vscode

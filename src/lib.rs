@@ -12,6 +12,5 @@ pub use config::Config;
 pub use domain::{LayoutNode, LayoutSplit, Pane, PaneId, Session, SessionId, Window, WindowId};
 pub use event::{AppEvent, EventHandler};
 pub use tmux::{
-    detect_environment, execute_handoff, CliTmuxClient, MockTmuxClient, TmuxClient,
-    TmuxEnvironment,
+    CliTmuxClient, MockTmuxClient, TmuxClient, TmuxEnvironment, detect_environment, execute_handoff,
 };

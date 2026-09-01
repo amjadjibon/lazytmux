@@ -1,10 +1,10 @@
 use crate::app::{App, FocusColumn};
 use crate::domain::{LayoutNode, LayoutSplit, Pane, Window};
 use crate::ui::theme::Theme;
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
-use ratatui::Frame;
 
 pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
     let focused = app.focus == FocusColumn::Panes;
@@ -112,7 +112,9 @@ fn render_pane_card(
         .unwrap_or(false);
 
     let border_style = if is_selected && focused {
-        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
     } else if is_selected {
         Style::default().fg(Color::LightCyan)
     } else {
@@ -128,7 +130,9 @@ fn render_pane_card(
         .border_style(border_style)
         .title(title)
         .title_style(if is_selected {
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::Gray)
         });

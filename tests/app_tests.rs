@@ -7,14 +7,31 @@ use lazytmux::tmux::MockTmuxClient;
 fn test_live_cli_client() {
     use lazytmux::tmux::{CliTmuxClient, TmuxClient};
     let client = CliTmuxClient::new();
-    let tree = client.fetch_full_tree().expect("fetch_full_tree should succeed");
+    let tree = client
+        .fetch_full_tree()
+        .expect("fetch_full_tree should succeed");
     println!("FETCHED SESSIONS COUNT: {}", tree.len());
     for s in &tree {
-        println!("Session: {} (id: {}, attached: {}, windows: {})", s.name, s.id, s.attached, s.windows.len());
+        println!(
+            "Session: {} (id: {}, attached: {}, windows: {})",
+            s.name,
+            s.id,
+            s.attached,
+            s.windows.len()
+        );
         for w in &s.windows {
-            println!("  Window: {} (id: {}, active: {}, panes: {})", w.name, w.id, w.active, w.panes.len());
+            println!(
+                "  Window: {} (id: {}, active: {}, panes: {})",
+                w.name,
+                w.id,
+                w.active,
+                w.panes.len()
+            );
             for p in &w.panes {
-                println!("    Pane: {} (cmd: {}, path: {:?})", p.id, p.current_command, p.current_path);
+                println!(
+                    "    Pane: {} (cmd: {}, path: {:?})",
+                    p.id, p.current_command, p.current_path
+                );
             }
         }
     }
@@ -215,7 +232,11 @@ fn test_search_mode_full_flow() {
     app.update(Action::SearchInput('o')).unwrap();
     app.update(Action::SearchInput('g')).unwrap();
 
-    if let Mode::Search { query, selected_index } = &app.mode {
+    if let Mode::Search {
+        query,
+        selected_index,
+    } = &app.mode
+    {
         assert_eq!(query, "blog");
         assert_eq!(*selected_index, 0);
     } else {
@@ -295,7 +316,11 @@ fn test_mouse_scroll_inspect() {
     };
 
     // Mouse scroll down in inspect mode
-    app.update(Action::MouseScrollDown { column: 10, row: 10 }).unwrap();
+    app.update(Action::MouseScrollDown {
+        column: 10,
+        row: 10,
+    })
+    .unwrap();
     if let Mode::InspectPane { scroll_offset, .. } = app.mode {
         assert_eq!(scroll_offset, 3);
     } else {
@@ -303,7 +328,11 @@ fn test_mouse_scroll_inspect() {
     }
 
     // Mouse scroll up in inspect mode
-    app.update(Action::MouseScrollUp { column: 10, row: 10 }).unwrap();
+    app.update(Action::MouseScrollUp {
+        column: 10,
+        row: 10,
+    })
+    .unwrap();
     if let Mode::InspectPane { scroll_offset, .. } = app.mode {
         assert_eq!(scroll_offset, 0);
     }
@@ -324,4 +353,3 @@ fn test_selection_clamping_edge_cases() {
     assert_eq!(app.selection.window_idx, 0);
     assert_eq!(app.selection.pane_idx, 0);
 }
-

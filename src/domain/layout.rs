@@ -73,7 +73,9 @@ impl LayoutNode {
 
         match self {
             LayoutNode::Leaf { pane_id, .. } => pane_id.clone(),
-            LayoutNode::Container { split, children, .. } => {
+            LayoutNode::Container {
+                split, children, ..
+            } => {
                 if children.is_empty() {
                     return None;
                 }

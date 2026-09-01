@@ -1,7 +1,7 @@
 use super::client::TmuxClient;
 use super::parser::{assemble_tree, parse_panes, parse_sessions, parse_windows};
 use crate::domain::{Pane, PaneId, Session, SessionId, Window, WindowId};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::process::Command;
 
 #[derive(Debug, Clone, Default)]
@@ -58,7 +58,10 @@ impl TmuxClient for CliTmuxClient {
     fn list_panes(&self, window: &WindowId) -> Result<Vec<Pane>> {
         let fmt = "#{session_id}\t#{window_id}\t#{pane_id}\t#{pane_index}\t#{pane_active}\t#{pane_current_command}\t#{pane_current_path}\t#{pane_width}\t#{pane_height}";
         let output = self.run_cmd(&["list-panes", "-t", &window.0, "-F", fmt])?;
-        let panes = parse_panes(&output).into_iter().map(|(_, _, p)| p).collect();
+        let panes = parse_panes(&output)
+            .into_iter()
+            .map(|(_, _, p)| p)
+            .collect();
         Ok(panes)
     }
 
@@ -68,7 +71,9 @@ impl TmuxClient for CliTmuxClient {
             Ok(out) => out,
             Err(e) => {
                 // If no server running, return empty list
-                if e.to_string().contains("no server running") || e.to_string().contains("error connecting to") {
+                if e.to_string().contains("no server running")
+                    || e.to_string().contains("error connecting to")
+                {
                     return Ok(Vec::new());
                 }
                 return Err(e);
@@ -150,7 +155,15 @@ impl TmuxClient for CliTmuxClient {
 
     fn split_pane(&mut self, pane: &PaneId, vertical: bool) -> Result<PaneId> {
         let flag = if vertical { "-h" } else { "-v" };
-        let out = self.run_cmd(&["split-window", flag, "-t", &pane.0, "-P", "-F", "#{pane_id}"])?;
+        let out = self.run_cmd(&[
+            "split-window",
+            flag,
+            "-t",
+            &pane.0,
+            "-P",
+            "-F",
+            "#{pane_id}",
+        ])?;
         Ok(PaneId::from(out.trim()))
     }
 

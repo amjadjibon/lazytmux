@@ -13,7 +13,12 @@ fn test_create_session() {
 
     // Trigger prompt
     app.update(Action::PromptNewSession).unwrap();
-    assert_eq!(app.mode, Mode::PromptNewSession { input: String::new() });
+    assert_eq!(
+        app.mode,
+        Mode::PromptNewSession {
+            input: String::new()
+        }
+    );
 
     // Type name
     app.update(Action::ModalInput('d')).unwrap();
@@ -102,8 +107,14 @@ fn test_create_window() {
     app.update(Action::ModalSubmit).unwrap();
 
     assert_eq!(app.mode, Mode::Normal);
-    assert_eq!(app.selected_session().unwrap().windows.len(), initial_windows + 1);
-    assert_eq!(app.selected_session().unwrap().windows.last().unwrap().name, "api");
+    assert_eq!(
+        app.selected_session().unwrap().windows.len(),
+        initial_windows + 1
+    );
+    assert_eq!(
+        app.selected_session().unwrap().windows.last().unwrap().name,
+        "api"
+    );
 }
 
 #[test]
@@ -124,7 +135,10 @@ fn test_create_and_split_pane() {
     // Split vertically
     app.update(Action::SplitPane { vertical: true }).unwrap();
     assert_eq!(app.mode, Mode::Normal);
-    assert_eq!(app.selected_window().unwrap().panes.len(), initial_panes + 1);
+    assert_eq!(
+        app.selected_window().unwrap().panes.len(),
+        initial_panes + 1
+    );
 }
 
 #[test]
@@ -161,12 +175,18 @@ fn test_kill_window_with_confirmation() {
 
     // Trigger prompt kill
     app.update(Action::PromptKill).unwrap();
-    assert!(matches!(app.mode, Mode::ConfirmKill(KillTarget::Window(..))));
+    assert!(matches!(
+        app.mode,
+        Mode::ConfirmKill(KillTarget::Window(..))
+    ));
 
     // Confirm kill
     app.update(Action::ConfirmKill).unwrap();
     assert_eq!(app.mode, Mode::Normal);
-    assert_eq!(app.selected_session().unwrap().windows.len(), initial_count - 1);
+    assert_eq!(
+        app.selected_session().unwrap().windows.len(),
+        initial_count - 1
+    );
 }
 
 #[test]
@@ -184,6 +204,8 @@ fn test_kill_pane_with_confirmation() {
     // Confirm kill
     app.update(Action::ConfirmKill).unwrap();
     assert_eq!(app.mode, Mode::Normal);
-    assert_eq!(app.selected_window().unwrap().panes.len(), initial_panes - 1);
+    assert_eq!(
+        app.selected_window().unwrap().panes.len(),
+        initial_panes - 1
+    );
 }
-

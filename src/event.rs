@@ -1,7 +1,7 @@
 use crossterm::event::{self, Event as CrosstermEvent, KeyEvent, MouseEvent};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -38,9 +38,10 @@ impl EventHandler {
                     };
 
                     if let Some(ev) = app_event
-                        && tx_events.send(ev).is_err() {
-                            break;
-                        }
+                        && tx_events.send(ev).is_err()
+                    {
+                        break;
+                    }
                 }
             }
         });

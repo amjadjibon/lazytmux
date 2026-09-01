@@ -37,7 +37,10 @@ impl Window {
     }
 
     pub fn active_pane(&self) -> Option<&Pane> {
-        self.panes.iter().find(|p| p.active).or_else(|| self.panes.first())
+        self.panes
+            .iter()
+            .find(|p| p.active)
+            .or_else(|| self.panes.first())
     }
 
     pub fn get_pane(&self, pane_id: &PaneId) -> Option<&Pane> {

@@ -1,6 +1,6 @@
 use super::client::TmuxClient;
 use crate::domain::{Pane, PaneId, Session, SessionId, Window, WindowId};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]

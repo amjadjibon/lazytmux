@@ -25,13 +25,32 @@ pub enum KillTarget {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mode {
     Normal,
-    Search { query: String, selected_index: usize },
-    InspectPane { pane_id: PaneId, scroll_offset: usize },
-    PromptNewSession { input: String },
-    PromptNewWindow { session_id: SessionId, input: String },
-    PromptNewPane { pane_id: PaneId },
-    PromptRenameSession { session_id: SessionId, input: String },
-    PromptRenameWindow { window_id: WindowId, input: String },
+    Search {
+        query: String,
+        selected_index: usize,
+    },
+    InspectPane {
+        pane_id: PaneId,
+        scroll_offset: usize,
+    },
+    PromptNewSession {
+        input: String,
+    },
+    PromptNewWindow {
+        session_id: SessionId,
+        input: String,
+    },
+    PromptNewPane {
+        pane_id: PaneId,
+    },
+    PromptRenameSession {
+        session_id: SessionId,
+        input: String,
+    },
+    PromptRenameWindow {
+        window_id: WindowId,
+        input: String,
+    },
     ConfirmKill(KillTarget),
     Help,
 }
@@ -103,7 +122,10 @@ impl App {
         for session in &mut tree {
             for window in &mut session.windows {
                 for pane in &mut window.panes {
-                    if let Ok(raw) = self.client.capture_pane(&pane.id, self.config.pane_preview_lines, true) {
+                    if let Ok(raw) =
+                        self.client
+                            .capture_pane(&pane.id, self.config.pane_preview_lines, true)
+                    {
                         pane.set_preview(raw);
                     }
                 }
@@ -154,11 +176,13 @@ impl App {
     }
 
     pub fn selected_window(&self) -> Option<&Window> {
-        self.selected_session().and_then(|s| s.windows.get(self.selection.window_idx))
+        self.selected_session()
+            .and_then(|s| s.windows.get(self.selection.window_idx))
     }
 
     pub fn selected_pane(&self) -> Option<&Pane> {
-        self.selected_window().and_then(|w| w.panes.get(self.selection.pane_idx))
+        self.selected_window()
+            .and_then(|w| w.panes.get(self.selection.pane_idx))
     }
 
     pub fn search_items(&self) -> Vec<SearchItem> {
@@ -201,7 +225,9 @@ impl App {
             .filter_map(|item| {
                 let mut buf = Vec::new();
                 let haystack = Utf32Str::new(&item.display_text, &mut buf);
-                pattern.score(haystack, &mut matcher).map(|score| (item, score))
+                pattern
+                    .score(haystack, &mut matcher)
+                    .map(|score| (item, score))
             })
             .collect();
 
@@ -211,50 +237,50 @@ impl App {
 
     pub fn handle_key_event(&mut self, key: KeyEvent) -> Option<Action> {
         match &self.mode {
-            Mode::Normal => match (key.modifiers, key.code) {
-                (KeyModifiers::NONE, KeyCode::Char('q')) | (KeyModifiers::NONE, KeyCode::Esc) => {
-                    Some(Action::Quit)
+            Mode::Normal => {
+                match (key.modifiers, key.code) {
+                    (KeyModifiers::NONE, KeyCode::Char('q'))
+                    | (KeyModifiers::NONE, KeyCode::Esc) => Some(Action::Quit),
+                    (KeyModifiers::NONE, KeyCode::Char('j'))
+                    | (KeyModifiers::NONE, KeyCode::Down) => Some(Action::NavigateDown),
+                    (KeyModifiers::NONE, KeyCode::Char('k'))
+                    | (KeyModifiers::NONE, KeyCode::Up) => Some(Action::NavigateUp),
+                    (KeyModifiers::NONE, KeyCode::Char('h'))
+                    | (KeyModifiers::NONE, KeyCode::Left) => Some(Action::NavigateLeft),
+                    (KeyModifiers::NONE, KeyCode::Char('l'))
+                    | (KeyModifiers::NONE, KeyCode::Right) => Some(Action::NavigateRight),
+                    (KeyModifiers::NONE, KeyCode::Tab) => Some(Action::NextColumn),
+                    (KeyModifiers::SHIFT, KeyCode::BackTab) => Some(Action::PrevColumn),
+                    (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::OpenSelection),
+                    (KeyModifiers::NONE, KeyCode::Char('/')) => Some(Action::ToggleSearch),
+                    (KeyModifiers::NONE, KeyCode::Char('?')) => Some(Action::Help),
+                    (KeyModifiers::NONE, KeyCode::Char('r')) => Some(Action::Refresh),
+                    (KeyModifiers::NONE, KeyCode::Char(' ')) => Some(Action::ToggleInspect),
+                    (KeyModifiers::NONE, KeyCode::Char('z')) => Some(Action::ToggleZoom),
+                    (KeyModifiers::NONE, KeyCode::Char('f')) => Some(Action::ToggleFavorite),
+                    (KeyModifiers::NONE, KeyCode::Char('c')) => Some(Action::CopyPaneOutput),
+                    (KeyModifiers::NONE, KeyCode::Char('x')) => Some(Action::PromptKill),
+                    (KeyModifiers::NONE, KeyCode::Char('n')) => match self.focus {
+                        FocusColumn::Sessions => Some(Action::PromptNewSession),
+                        FocusColumn::Windows => Some(Action::PromptNewWindow),
+                        FocusColumn::Panes => Some(Action::PromptNewPane),
+                    },
+                    (KeyModifiers::NONE, KeyCode::Char('R')) => match self.focus {
+                        FocusColumn::Sessions => Some(Action::PromptRenameSession),
+                        FocusColumn::Windows | FocusColumn::Panes => {
+                            Some(Action::PromptRenameWindow)
+                        }
+                    },
+                    _ => None,
                 }
-                (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => {
-                    Some(Action::NavigateDown)
-                }
-                (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => {
-                    Some(Action::NavigateUp)
-                }
-                (KeyModifiers::NONE, KeyCode::Char('h')) | (KeyModifiers::NONE, KeyCode::Left) => {
-                    Some(Action::NavigateLeft)
-                }
-                (KeyModifiers::NONE, KeyCode::Char('l')) | (KeyModifiers::NONE, KeyCode::Right) => {
-                    Some(Action::NavigateRight)
-                }
-                (KeyModifiers::NONE, KeyCode::Tab) => Some(Action::NextColumn),
-                (KeyModifiers::SHIFT, KeyCode::BackTab) => Some(Action::PrevColumn),
-                (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::OpenSelection),
-                (KeyModifiers::NONE, KeyCode::Char('/')) => Some(Action::ToggleSearch),
-                (KeyModifiers::NONE, KeyCode::Char('?')) => Some(Action::Help),
-                (KeyModifiers::NONE, KeyCode::Char('r')) => Some(Action::Refresh),
-                (KeyModifiers::NONE, KeyCode::Char(' ')) => Some(Action::ToggleInspect),
-                (KeyModifiers::NONE, KeyCode::Char('z')) => Some(Action::ToggleZoom),
-                (KeyModifiers::NONE, KeyCode::Char('f')) => Some(Action::ToggleFavorite),
-                (KeyModifiers::NONE, KeyCode::Char('c')) => Some(Action::CopyPaneOutput),
-                (KeyModifiers::NONE, KeyCode::Char('x')) => Some(Action::PromptKill),
-                (KeyModifiers::NONE, KeyCode::Char('n')) => match self.focus {
-                    FocusColumn::Sessions => Some(Action::PromptNewSession),
-                    FocusColumn::Windows => Some(Action::PromptNewWindow),
-                    FocusColumn::Panes => Some(Action::PromptNewPane),
-                },
-                (KeyModifiers::NONE, KeyCode::Char('R')) => match self.focus {
-                    FocusColumn::Sessions => Some(Action::PromptRenameSession),
-                    FocusColumn::Windows | FocusColumn::Panes => Some(Action::PromptRenameWindow),
-                },
-                _ => None,
-            },
+            }
 
             Mode::PromptNewPane { .. } => match (key.modifiers, key.code) {
                 (KeyModifiers::NONE, KeyCode::Esc) | (KeyModifiers::NONE, KeyCode::Char('q')) => {
                     Some(Action::CancelModal)
                 }
-                (KeyModifiers::NONE, KeyCode::Char('v')) | (KeyModifiers::NONE, KeyCode::Char('V')) => {
+                (KeyModifiers::NONE, KeyCode::Char('v'))
+                | (KeyModifiers::NONE, KeyCode::Char('V')) => {
                     Some(Action::SplitPane { vertical: true })
                 }
                 (KeyModifiers::NONE, KeyCode::Char('h'))
@@ -269,9 +295,8 @@ impl App {
             Mode::Search { .. } => match (key.modifiers, key.code) {
                 (KeyModifiers::NONE, KeyCode::Esc) => Some(Action::ToggleSearch),
                 (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::SearchSelect),
-                (KeyModifiers::NONE, KeyCode::Down) | (KeyModifiers::CONTROL, KeyCode::Char('n')) => {
-                    Some(Action::SearchNext)
-                }
+                (KeyModifiers::NONE, KeyCode::Down)
+                | (KeyModifiers::CONTROL, KeyCode::Char('n')) => Some(Action::SearchNext),
                 (KeyModifiers::NONE, KeyCode::Up) | (KeyModifiers::CONTROL, KeyCode::Char('p')) => {
                     Some(Action::SearchPrev)
                 }
@@ -329,29 +354,27 @@ impl App {
         }
     }
 
-    pub fn handle_mouse_event(&mut self, mouse: crossterm::event::MouseEvent, area: ratatui::layout::Rect) -> Option<Action> {
+    pub fn handle_mouse_event(
+        &mut self,
+        mouse: crossterm::event::MouseEvent,
+        area: ratatui::layout::Rect,
+    ) -> Option<Action> {
         self.last_area = area;
         use crossterm::event::MouseEventKind;
         match mouse.kind {
-            MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
-                Some(Action::MouseClick {
-                    column: mouse.column,
-                    row: mouse.row,
-                    double_click: false,
-                })
-            }
-            MouseEventKind::ScrollUp => {
-                Some(Action::MouseScrollUp {
-                    column: mouse.column,
-                    row: mouse.row,
-                })
-            }
-            MouseEventKind::ScrollDown => {
-                Some(Action::MouseScrollDown {
-                    column: mouse.column,
-                    row: mouse.row,
-                })
-            }
+            MouseEventKind::Down(crossterm::event::MouseButton::Left) => Some(Action::MouseClick {
+                column: mouse.column,
+                row: mouse.row,
+                double_click: false,
+            }),
+            MouseEventKind::ScrollUp => Some(Action::MouseScrollUp {
+                column: mouse.column,
+                row: mouse.row,
+            }),
+            MouseEventKind::ScrollDown => Some(Action::MouseScrollDown {
+                column: mouse.column,
+                row: mouse.row,
+            }),
             _ => None,
         }
     }
@@ -380,7 +403,9 @@ impl App {
 
             Action::NavigateDown => match self.focus {
                 FocusColumn::Sessions => {
-                    if !self.sessions.is_empty() && self.selection.session_idx + 1 < self.sessions.len() {
+                    if !self.sessions.is_empty()
+                        && self.selection.session_idx + 1 < self.sessions.len()
+                    {
                         self.selection.session_idx += 1;
                         self.selection.window_idx = 0;
                         self.selection.pane_idx = 0;
@@ -390,20 +415,20 @@ impl App {
                 FocusColumn::Windows => {
                     if let Some(session) = self.selected_session()
                         && !session.windows.is_empty()
-                            && self.selection.window_idx + 1 < session.windows.len()
-                        {
-                            self.selection.window_idx += 1;
-                            self.selection.pane_idx = 0;
-                            self.clamp_selections();
-                        }
+                        && self.selection.window_idx + 1 < session.windows.len()
+                    {
+                        self.selection.window_idx += 1;
+                        self.selection.pane_idx = 0;
+                        self.clamp_selections();
+                    }
                 }
                 FocusColumn::Panes => {
                     if let Some(window) = self.selected_window()
                         && !window.panes.is_empty()
-                            && self.selection.pane_idx + 1 < window.panes.len()
-                        {
-                            self.selection.pane_idx += 1;
-                        }
+                        && self.selection.pane_idx + 1 < window.panes.len()
+                    {
+                        self.selection.pane_idx += 1;
+                    }
                 }
             },
 
@@ -507,11 +532,14 @@ impl App {
                         .capture_pane(&pane.id, 2000, true)
                         .unwrap_or_else(|_| pane.preview_raw.clone());
                     let pane_id = pane.id.clone();
-                    if let Some(w) = self.sessions.get_mut(self.selection.session_idx)
+                    if let Some(w) = self
+                        .sessions
+                        .get_mut(self.selection.session_idx)
                         .and_then(|s| s.windows.get_mut(self.selection.window_idx))
-                        && let Some(p) = w.panes.get_mut(self.selection.pane_idx) {
-                            p.set_preview(raw);
-                        }
+                        && let Some(p) = w.panes.get_mut(self.selection.pane_idx)
+                    {
+                        p.set_preview(raw);
+                    }
                     self.mode = Mode::InspectPane {
                         pane_id,
                         scroll_offset: 0,
@@ -539,9 +567,10 @@ impl App {
 
                 if pane_id.is_some()
                     && let Mode::InspectPane { scroll_offset, .. } = &mut self.mode
-                        && *scroll_offset + lines < max_lines {
-                            *scroll_offset += lines;
-                        }
+                    && *scroll_offset + lines < max_lines
+                {
+                    *scroll_offset += lines;
+                }
             }
 
             Action::InspectScrollTop => {
@@ -563,9 +592,10 @@ impl App {
                 };
 
                 if pane_id.is_some()
-                    && let Mode::InspectPane { scroll_offset, .. } = &mut self.mode {
-                        *scroll_offset = max_lines.saturating_sub(10);
-                    }
+                    && let Mode::InspectPane { scroll_offset, .. } = &mut self.mode
+                {
+                    *scroll_offset = max_lines.saturating_sub(10);
+                }
             }
 
             Action::CopyPaneOutput => {
@@ -574,13 +604,22 @@ impl App {
                     match arboard::Clipboard::new() {
                         Ok(mut clipboard) => {
                             if clipboard.set_text(text).is_ok() {
-                                self.show_toast("Copied pane output to clipboard".to_string(), ToastLevel::Success);
+                                self.show_toast(
+                                    "Copied pane output to clipboard".to_string(),
+                                    ToastLevel::Success,
+                                );
                             } else {
-                                self.show_toast("Failed to copy to clipboard".to_string(), ToastLevel::Error);
+                                self.show_toast(
+                                    "Failed to copy to clipboard".to_string(),
+                                    ToastLevel::Error,
+                                );
                             }
                         }
                         Err(e) => {
-                            self.show_toast(format!("Clipboard unavailable: {e}"), ToastLevel::Warning);
+                            self.show_toast(
+                                format!("Clipboard unavailable: {e}"),
+                                ToastLevel::Warning,
+                            );
                         }
                     }
                 }
@@ -589,7 +628,11 @@ impl App {
             Action::ToggleFavorite => {
                 if let Some(s) = self.sessions.get_mut(self.selection.session_idx) {
                     s.is_favorite = !s.is_favorite;
-                    let msg = if s.is_favorite { "Added to favorites" } else { "Removed from favorites" };
+                    let msg = if s.is_favorite {
+                        "Added to favorites"
+                    } else {
+                        "Removed from favorites"
+                    };
                     self.show_toast(msg.to_string(), ToastLevel::Info);
                 }
             }
@@ -614,14 +657,22 @@ impl App {
             }
 
             Action::SearchInput(c) => {
-                if let Mode::Search { query, selected_index } = &mut self.mode {
+                if let Mode::Search {
+                    query,
+                    selected_index,
+                } = &mut self.mode
+                {
                     query.push(c);
                     *selected_index = 0;
                 }
             }
 
             Action::SearchBackspace => {
-                if let Mode::Search { query, selected_index } = &mut self.mode {
+                if let Mode::Search {
+                    query,
+                    selected_index,
+                } = &mut self.mode
+                {
                     query.pop();
                     *selected_index = 0;
                 }
@@ -637,21 +688,28 @@ impl App {
                 if let Some(q) = query {
                     let results_len = self.filtered_search_results(&q).len();
                     if let Mode::Search { selected_index, .. } = &mut self.mode
-                        && results_len > 0 && *selected_index + 1 < results_len {
-                            *selected_index += 1;
-                        }
+                        && results_len > 0
+                        && *selected_index + 1 < results_len
+                    {
+                        *selected_index += 1;
+                    }
                 }
             }
 
             Action::SearchPrev => {
                 if let Mode::Search { selected_index, .. } = &mut self.mode
-                    && *selected_index > 0 {
-                        *selected_index -= 1;
-                    }
+                    && *selected_index > 0
+                {
+                    *selected_index -= 1;
+                }
             }
 
             Action::SearchSelect => {
-                if let Mode::Search { query, selected_index } = &self.mode {
+                if let Mode::Search {
+                    query,
+                    selected_index,
+                } = &self.mode
+                {
                     let results = self.filtered_search_results(query);
                     if let Some(item) = results.get(*selected_index) {
                         let (s_id, s_name, w_id, p_id) = (
@@ -671,50 +729,71 @@ impl App {
                 }
             }
 
-            Action::PromptKill => {
-                match self.focus {
-                    FocusColumn::Sessions => {
-                        if let Some(s) = self.selected_session() {
-                            self.mode = Mode::ConfirmKill(KillTarget::Session(s.id.clone(), s.name.clone()));
-                        }
-                    }
-                    FocusColumn::Windows => {
-                        if let Some(w) = self.selected_window() {
-                            self.mode = Mode::ConfirmKill(KillTarget::Window(w.id.clone(), w.name.clone()));
-                        }
-                    }
-                    FocusColumn::Panes => {
-                        if let Some(p) = self.selected_pane() {
-                            self.mode = Mode::ConfirmKill(KillTarget::Pane(p.id.clone(), p.current_command.clone()));
-                        }
+            Action::PromptKill => match self.focus {
+                FocusColumn::Sessions => {
+                    if let Some(s) = self.selected_session() {
+                        self.mode =
+                            Mode::ConfirmKill(KillTarget::Session(s.id.clone(), s.name.clone()));
                     }
                 }
-            }
+                FocusColumn::Windows => {
+                    if let Some(w) = self.selected_window() {
+                        self.mode =
+                            Mode::ConfirmKill(KillTarget::Window(w.id.clone(), w.name.clone()));
+                    }
+                }
+                FocusColumn::Panes => {
+                    if let Some(p) = self.selected_pane() {
+                        self.mode = Mode::ConfirmKill(KillTarget::Pane(
+                            p.id.clone(),
+                            p.current_command.clone(),
+                        ));
+                    }
+                }
+            },
 
             Action::ConfirmKill => {
                 if let Mode::ConfirmKill(target) = self.mode.clone() {
                     match target {
                         KillTarget::Session(s_id, name) => {
                             if let Err(e) = self.client.kill_session(&s_id) {
-                                self.show_toast(format!("Kill session failed: {e}"), ToastLevel::Error);
+                                self.show_toast(
+                                    format!("Kill session failed: {e}"),
+                                    ToastLevel::Error,
+                                );
                             } else {
-                                self.show_toast(format!("Killed session '{name}'"), ToastLevel::Success);
+                                self.show_toast(
+                                    format!("Killed session '{name}'"),
+                                    ToastLevel::Success,
+                                );
                                 let _ = self.refresh_data();
                             }
                         }
                         KillTarget::Window(w_id, name) => {
                             if let Err(e) = self.client.kill_window(&w_id) {
-                                self.show_toast(format!("Kill window failed: {e}"), ToastLevel::Error);
+                                self.show_toast(
+                                    format!("Kill window failed: {e}"),
+                                    ToastLevel::Error,
+                                );
                             } else {
-                                self.show_toast(format!("Killed window '{name}'"), ToastLevel::Success);
+                                self.show_toast(
+                                    format!("Killed window '{name}'"),
+                                    ToastLevel::Success,
+                                );
                                 let _ = self.refresh_data();
                             }
                         }
                         KillTarget::Pane(p_id, name) => {
                             if let Err(e) = self.client.kill_pane(&p_id) {
-                                self.show_toast(format!("Kill pane failed: {e}"), ToastLevel::Error);
+                                self.show_toast(
+                                    format!("Kill pane failed: {e}"),
+                                    ToastLevel::Error,
+                                );
                             } else {
-                                self.show_toast(format!("Killed pane {p_id} ({name})"), ToastLevel::Success);
+                                self.show_toast(
+                                    format!("Killed pane {p_id} ({name})"),
+                                    ToastLevel::Success,
+                                );
                                 let _ = self.refresh_data();
                             }
                         }
@@ -724,7 +803,9 @@ impl App {
             }
 
             Action::PromptNewSession => {
-                self.mode = Mode::PromptNewSession { input: String::new() };
+                self.mode = Mode::PromptNewSession {
+                    input: String::new(),
+                };
             }
 
             Action::PromptNewWindow => {
@@ -925,9 +1006,15 @@ impl App {
                         let name = input.trim();
                         if !name.is_empty() {
                             if let Err(e) = self.client.create_session(name) {
-                                self.show_toast(format!("Create session failed: {e}"), ToastLevel::Error);
+                                self.show_toast(
+                                    format!("Create session failed: {e}"),
+                                    ToastLevel::Error,
+                                );
                             } else {
-                                self.show_toast(format!("Created session '{name}'"), ToastLevel::Success);
+                                self.show_toast(
+                                    format!("Created session '{name}'"),
+                                    ToastLevel::Success,
+                                );
                                 let _ = self.refresh_data();
                             }
                         }
@@ -936,9 +1023,15 @@ impl App {
                         let name = input.trim();
                         if !name.is_empty() {
                             if let Err(e) = self.client.create_window(&session_id, name) {
-                                self.show_toast(format!("Create window failed: {e}"), ToastLevel::Error);
+                                self.show_toast(
+                                    format!("Create window failed: {e}"),
+                                    ToastLevel::Error,
+                                );
                             } else {
-                                self.show_toast(format!("Created window '{name}'"), ToastLevel::Success);
+                                self.show_toast(
+                                    format!("Created window '{name}'"),
+                                    ToastLevel::Success,
+                                );
                                 let _ = self.refresh_data();
                             }
                         }
@@ -947,9 +1040,15 @@ impl App {
                         let name = input.trim();
                         if !name.is_empty() {
                             if let Err(e) = self.client.rename_session(&session_id, name) {
-                                self.show_toast(format!("Rename session failed: {e}"), ToastLevel::Error);
+                                self.show_toast(
+                                    format!("Rename session failed: {e}"),
+                                    ToastLevel::Error,
+                                );
                             } else {
-                                self.show_toast(format!("Renamed session to '{name}'"), ToastLevel::Success);
+                                self.show_toast(
+                                    format!("Renamed session to '{name}'"),
+                                    ToastLevel::Success,
+                                );
                                 let _ = self.refresh_data();
                             }
                         }
@@ -958,9 +1057,15 @@ impl App {
                         let name = input.trim();
                         if !name.is_empty() {
                             if let Err(e) = self.client.rename_window(&window_id, name) {
-                                self.show_toast(format!("Rename window failed: {e}"), ToastLevel::Error);
+                                self.show_toast(
+                                    format!("Rename window failed: {e}"),
+                                    ToastLevel::Error,
+                                );
                             } else {
-                                self.show_toast(format!("Renamed window to '{name}'"), ToastLevel::Success);
+                                self.show_toast(
+                                    format!("Renamed window to '{name}'"),
+                                    ToastLevel::Success,
+                                );
                                 let _ = self.refresh_data();
                             }
                         }

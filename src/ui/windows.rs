@@ -1,10 +1,10 @@
 use crate::app::{App, FocusColumn};
 use crate::ui::theme::Theme;
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, Paragraph};
-use ratatui::Frame;
 
 pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
     let focused = app.focus == FocusColumn::Windows;
@@ -37,13 +37,23 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
             let is_selected = idx == app.selection.window_idx;
 
             let cursor_span = if is_selected {
-                Span::styled("▶ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+                Span::styled(
+                    "▶ ",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                )
             } else {
                 Span::raw("  ")
             };
 
             let active_span = if window.active {
-                Span::styled("* ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
+                Span::styled(
+                    "* ",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                )
             } else {
                 Span::raw("  ")
             };
@@ -54,7 +64,9 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
             );
 
             let name_style = if is_selected {
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             } else if window.active {
                 Style::default().fg(Color::White)
             } else {

@@ -28,7 +28,10 @@ impl Session {
     }
 
     pub fn active_window(&self) -> Option<&Window> {
-        self.windows.iter().find(|w| w.active).or_else(|| self.windows.first())
+        self.windows
+            .iter()
+            .find(|w| w.active)
+            .or_else(|| self.windows.first())
     }
 
     pub fn get_window(&self, window_id: &WindowId) -> Option<&Window> {

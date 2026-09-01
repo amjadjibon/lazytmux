@@ -1,15 +1,18 @@
 use crate::app::App;
 use crate::ui::theme::Theme;
 use ansi_to_tui::IntoText;
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
-use ratatui::Frame;
 
 pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
     let (pane_id, scroll_offset) = match &app.mode {
-        crate::app::Mode::InspectPane { pane_id, scroll_offset } => (pane_id, *scroll_offset),
+        crate::app::Mode::InspectPane {
+            pane_id,
+            scroll_offset,
+        } => (pane_id, *scroll_offset),
         _ => return,
     };
 
@@ -18,8 +21,14 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
         None => return,
     };
 
-    let s_name = app.selected_session().map(|s| s.name.as_str()).unwrap_or("?");
-    let w_name = app.selected_window().map(|w| w.name.as_str()).unwrap_or("?");
+    let s_name = app
+        .selected_session()
+        .map(|s| s.name.as_str())
+        .unwrap_or("?");
+    let w_name = app
+        .selected_window()
+        .map(|w| w.name.as_str())
+        .unwrap_or("?");
 
     let title = format!(
         " Inspect: {} › {} › {} ({}) ",
@@ -44,9 +53,17 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .border_style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
         .title(title)
-        .title_style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD))
+        .title_style(
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )
         .title_bottom(line_info);
 
     // Slice preview lines based on scroll offset
@@ -58,22 +75,40 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
         .collect();
 
     let joined = visible_lines.join("\n");
-    let content_text = joined.as_bytes().into_text().unwrap_or_else(|_| Text::raw(joined));
+    let content_text = joined
+        .as_bytes()
+        .into_text()
+        .unwrap_or_else(|_| Text::raw(joined));
 
     let paragraph = Paragraph::new(content_text).block(block);
     frame.render_widget(paragraph, chunks[0]);
 
     // Footer
     let footer_line = Line::from(vec![
-        Span::styled(" Esc ", Style::default().bg(Color::DarkGray).fg(Color::White)),
+        Span::styled(
+            " Esc ",
+            Style::default().bg(Color::DarkGray).fg(Color::White),
+        ),
         Span::raw(" Back  "),
-        Span::styled(" j/k ", Style::default().bg(Color::DarkGray).fg(Color::White)),
+        Span::styled(
+            " j/k ",
+            Style::default().bg(Color::DarkGray).fg(Color::White),
+        ),
         Span::raw(" Scroll  "),
-        Span::styled(" Ctrl+d/u ", Style::default().bg(Color::DarkGray).fg(Color::White)),
+        Span::styled(
+            " Ctrl+d/u ",
+            Style::default().bg(Color::DarkGray).fg(Color::White),
+        ),
         Span::raw(" Page  "),
         Span::styled(" c ", Style::default().bg(Color::DarkGray).fg(Color::White)),
         Span::raw(" Copy  "),
-        Span::styled(" Enter ", Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " Enter ",
+            Style::default()
+                .bg(Color::Cyan)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" Focus in Tmux"),
     ]);
 
