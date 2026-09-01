@@ -8,37 +8,38 @@ pub mod sessions;
 pub mod theme;
 pub mod windows;
 
+pub use theme::{Theme, ThemePreset};
+
 use crate::app::App;
 use layout::AppLayout;
 use ratatui::Frame;
-use theme::Theme;
 
 pub fn render(app: &App, frame: &mut Frame) {
-    let theme = Theme::default();
+    let theme = &app.theme;
     let area = frame.area();
     let app_layout = AppLayout::split(area);
 
     // 1. Header
-    footer::render_header(app, frame, app_layout.header, &theme);
+    footer::render_header(app, frame, app_layout.header, theme);
 
     // 2. Main 3 columns
-    sessions::render(app, frame, app_layout.sessions_col, &theme);
-    windows::render(app, frame, app_layout.windows_col, &theme);
-    panes::render(app, frame, app_layout.panes_col, &theme);
+    sessions::render(app, frame, app_layout.sessions_col, theme);
+    windows::render(app, frame, app_layout.windows_col, theme);
+    panes::render(app, frame, app_layout.panes_col, theme);
 
     // 3. Breadcrumbs
-    footer::render_breadcrumbs(app, frame, app_layout.breadcrumbs, &theme);
+    footer::render_breadcrumbs(app, frame, app_layout.breadcrumbs, theme);
 
     // 4. Footer
-    footer::render_footer(app, frame, app_layout.footer, &theme);
+    footer::render_footer(app, frame, app_layout.footer, theme);
 
     // 5. Active Modals & Overlays
     match &app.mode {
         crate::app::Mode::InspectPane { .. } => {
-            inspect::render(app, frame, area, &theme);
+            inspect::render(app, frame, area, theme);
         }
         crate::app::Mode::Search { .. } => {
-            search::render(app, frame, area, &theme);
+            search::render(app, frame, area, theme);
         }
         crate::app::Mode::ConfirmKill(_)
         | crate::app::Mode::PromptNewSession { .. }
@@ -47,7 +48,7 @@ pub fn render(app: &App, frame: &mut Frame) {
         | crate::app::Mode::PromptRenameSession { .. }
         | crate::app::Mode::PromptRenameWindow { .. }
         | crate::app::Mode::Help => {
-            modals::render(app, frame, area, &theme);
+            modals::render(app, frame, area, theme);
         }
         crate::app::Mode::Normal => {}
     }

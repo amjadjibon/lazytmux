@@ -12,8 +12,12 @@ pub struct Config {
     pub theme: ThemeConfig,
 }
 
+use crate::ui::ThemePreset;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThemeConfig {
+    #[serde(default)]
+    pub preset: ThemePreset,
     pub accent_color: String,
     pub border_style: String,
 }
@@ -21,6 +25,7 @@ pub struct ThemeConfig {
 impl Default for ThemeConfig {
     fn default() -> Self {
         Self {
+            preset: ThemePreset::Default,
             accent_color: "cyan".to_string(),
             border_style: "rounded".to_string(),
         }
