@@ -2,6 +2,14 @@
 name = "lazytmux"
 version = "0.1.0"
 edition = "2024"
+authors = ["Amjad Hossain <amjad.jibon@gmail.com>"]
+description = "A keyboard-first visual workspace explorer for tmux built in Rust with Ratatui"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/amjadjibon/lazytmux"
+homepage = "https://github.com/amjadjibon/lazytmux"
+keywords = ["tmux", "terminal", "tui", "ratatui", "workspace"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 # UI & Terminal
