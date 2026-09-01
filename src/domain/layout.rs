@@ -134,7 +134,20 @@ fn parse_number<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) ->
     }
 }
 
+const MAX_LAYOUT_DEPTH: usize = 32;
+
 fn parse_node<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) -> Option<LayoutNode> {
+    parse_node_depth(chars, 0)
+}
+
+fn parse_node_depth<I: Iterator<Item = char>>(
+    chars: &mut std::iter::Peekable<I>,
+    depth: usize,
+) -> Option<LayoutNode> {
+    if depth > MAX_LAYOUT_DEPTH {
+        return None;
+    }
+
     // 1. Parse width
     let width = parse_number(chars)?;
 
@@ -176,7 +189,7 @@ fn parse_node<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) -> O
                     chars.next();
                     continue;
                 }
-                if let Some(child) = parse_node(chars) {
+                if let Some(child) = parse_node_depth(chars, depth + 1) {
                     children.push(child);
                 } else {
                     chars.next();
@@ -203,7 +216,7 @@ fn parse_node<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) -> O
                     chars.next();
                     continue;
                 }
-                if let Some(child) = parse_node(chars) {
+                if let Some(child) = parse_node_depth(chars, depth + 1) {
                     children.push(child);
                 } else {
                     chars.next();

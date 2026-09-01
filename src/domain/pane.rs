@@ -70,29 +70,45 @@ impl Pane {
 }
 
 pub fn detect_git_branch(path: &std::path::Path) -> Option<String> {
+    use std::io::Read;
     let mut current = path;
-    loop {
+    let mut depth = 0;
+
+    while depth < 12 {
+        depth += 1;
         let git_dir = current.join(".git");
         if git_dir.is_dir() {
             let head_file = git_dir.join("HEAD");
-            if let Ok(content) = std::fs::read_to_string(head_file) {
-                let trimmed = content.trim();
-                if let Some(branch) = trimmed.strip_prefix("ref: refs/heads/") {
-                    return Some(branch.to_string());
-                } else if !trimmed.is_empty() && trimmed.len() >= 7 {
-                    return Some(trimmed[..7].to_string());
+            if let Ok(mut file) = std::fs::File::open(head_file) {
+                let mut buffer = [0u8; 1024];
+                if let Ok(n) = file.read(&mut buffer) {
+                    let content = String::from_utf8_lossy(&buffer[..n]);
+                    let trimmed = content.trim();
+                    if let Some(branch) = trimmed.strip_prefix("ref: refs/heads/") {
+                        return Some(branch.to_string());
+                    } else if !trimmed.is_empty() && trimmed.len() >= 7 {
+                        return Some(trimmed[..7].to_string());
+                    }
                 }
             }
             return None;
         } else if git_dir.is_file() {
-            if let Ok(content) = std::fs::read_to_string(git_dir)
-                && let Some(gitdir_path) = content.trim().strip_prefix("gitdir:")
-            {
-                let head_file = std::path::PathBuf::from(gitdir_path.trim()).join("HEAD");
-                if let Ok(head_content) = std::fs::read_to_string(head_file) {
-                    let trimmed = head_content.trim();
-                    if let Some(branch) = trimmed.strip_prefix("ref: refs/heads/") {
-                        return Some(branch.to_string());
+            if let Ok(mut file) = std::fs::File::open(git_dir) {
+                let mut buffer = [0u8; 1024];
+                if let Ok(n) = file.read(&mut buffer) {
+                    let content = String::from_utf8_lossy(&buffer[..n]);
+                    if let Some(gitdir_path) = content.trim().strip_prefix("gitdir:") {
+                        let head_file = std::path::PathBuf::from(gitdir_path.trim()).join("HEAD");
+                        if let Ok(mut hfile) = std::fs::File::open(head_file) {
+                            let mut hbuf = [0u8; 1024];
+                            if let Ok(hn) = hfile.read(&mut hbuf) {
+                                let head_content = String::from_utf8_lossy(&hbuf[..hn]);
+                                let trimmed = head_content.trim();
+                                if let Some(branch) = trimmed.strip_prefix("ref: refs/heads/") {
+                                    return Some(branch.to_string());
+                                }
+                            }
+                        }
                     }
                 }
             }
