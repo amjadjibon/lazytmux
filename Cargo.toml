@@ -4,3 +4,21 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+# UI & Terminal
+ratatui = "0.30"
+crossterm = "0.29"
+ansi-to-tui = "8.0"
+
+# Fuzzy Finding & Search
+nucleo-matcher = "0.3"
+
+# Serialization & Config
+serde = { version = "1.0", features = ["derive"] }
+toml = "1.1"
+directories = "6.0"
+
+# Error Handling & Utilities
+anyhow = "1.0"
+thiserror = "2.0"
+color-eyre = "0.6"
+arboard = "3.6"
