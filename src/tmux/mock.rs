@@ -467,6 +467,15 @@ impl TmuxClient for MockTmuxClient {
         Ok(())
     }
 
+    fn resize_pane(
+        &mut self,
+        _pane: &PaneId,
+        _direction: crate::tmux::client::ResizeDirection,
+        _amount: usize,
+    ) -> Result<()> {
+        Ok(())
+    }
+
     fn focus_pane(&self, _session: &SessionId, _window: &WindowId, _pane: &PaneId) -> Result<()> {
         Ok(())
     }

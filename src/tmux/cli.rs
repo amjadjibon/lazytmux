@@ -220,6 +220,23 @@ impl TmuxClient for CliTmuxClient {
         Ok(())
     }
 
+    fn resize_pane(
+        &mut self,
+        pane: &PaneId,
+        direction: crate::tmux::client::ResizeDirection,
+        amount: usize,
+    ) -> Result<()> {
+        let dir_flag = match direction {
+            crate::tmux::client::ResizeDirection::Up => "-U",
+            crate::tmux::client::ResizeDirection::Down => "-D",
+            crate::tmux::client::ResizeDirection::Left => "-L",
+            crate::tmux::client::ResizeDirection::Right => "-R",
+        };
+        let amt_str = amount.to_string();
+        self.run_cmd(&["resize-pane", "-t", &pane.0, dir_flag, &amt_str])?;
+        Ok(())
+    }
+
     fn focus_pane(&self, session: &SessionId, window: &WindowId, pane: &PaneId) -> Result<()> {
         // Run select commands
         let _ = self.run_cmd(&["select-window", "-t", &window.0]);

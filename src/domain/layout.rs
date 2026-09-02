@@ -67,12 +67,21 @@ impl LayoutNode {
     }
 
     pub fn find_pane_at(&self, area: ratatui::layout::Rect, x: u16, y: u16) -> Option<PaneId> {
+        self.find_pane_rect_at(area, x, y).map(|(id, _)| id)
+    }
+
+    pub fn find_pane_rect_at(
+        &self,
+        area: ratatui::layout::Rect,
+        x: u16,
+        y: u16,
+    ) -> Option<(PaneId, ratatui::layout::Rect)> {
         if x < area.x || x >= area.x + area.width || y < area.y || y >= area.y + area.height {
             return None;
         }
 
         match self {
-            LayoutNode::Leaf { pane_id, .. } => pane_id.clone(),
+            LayoutNode::Leaf { pane_id, .. } => pane_id.clone().map(|id| (id, area)),
             LayoutNode::Container {
                 split, children, ..
             } => {
@@ -105,9 +114,9 @@ impl LayoutNode {
 
                 for (idx, child) in children.iter().enumerate() {
                     if idx < chunks.len()
-                        && let Some(p_id) = child.find_pane_at(chunks[idx], x, y)
+                        && let Some(res) = child.find_pane_rect_at(chunks[idx], x, y)
                     {
-                        return Some(p_id);
+                        return Some(res);
                     }
                 }
 

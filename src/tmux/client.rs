@@ -1,6 +1,14 @@
 use crate::domain::{Pane, PaneId, Session, SessionId, Window, WindowId};
 use anyhow::Result;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResizeDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
 pub trait TmuxClient: Send + Sync {
     // Queries
     fn list_sessions(&self) -> Result<Vec<Session>>;
@@ -28,6 +36,12 @@ pub trait TmuxClient: Send + Sync {
     fn respawn_pane(&mut self, pane: &PaneId) -> Result<()>;
     fn send_keys(&mut self, pane: &PaneId, keys: &str) -> Result<()>;
     fn break_pane(&mut self, pane: &PaneId) -> Result<()>;
+    fn resize_pane(
+        &mut self,
+        pane: &PaneId,
+        direction: ResizeDirection,
+        amount: usize,
+    ) -> Result<()>;
 
     // Focus & Navigation
     fn focus_pane(&self, session: &SessionId, window: &WindowId, pane: &PaneId) -> Result<()>;
