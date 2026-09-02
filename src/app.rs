@@ -81,6 +81,8 @@ pub enum Mode {
     InspectPane {
         pane_id: PaneId,
         scroll_offset: usize,
+        search_query: Option<String>,
+        is_searching: bool,
     },
     PromptNewSession {
         input: String,
@@ -98,6 +100,10 @@ pub enum Mode {
     },
     PromptRenameWindow {
         window_id: WindowId,
+        input: String,
+    },
+    PromptSendCommand {
+        pane_id: PaneId,
         input: String,
     },
     ConfirmKill(KillTarget),
@@ -439,6 +445,18 @@ impl App {
                 {
                     Some(Action::ToggleSyncPanes)
                 }
+                (m, KeyCode::Char(':'))
+                    if (m.is_empty() || m == KeyModifiers::SHIFT)
+                        && self.focus == FocusColumn::Panes =>
+                {
+                    Some(Action::PromptSendCommand)
+                }
+                (m, KeyCode::Char('b') | KeyCode::Char('B'))
+                    if (m.is_empty() || m == KeyModifiers::SHIFT)
+                        && self.focus == FocusColumn::Panes =>
+                {
+                    Some(Action::BreakPane)
+                }
                 (m, KeyCode::Char('[') | KeyCode::Char('<'))
                     if (m.is_empty() || m == KeyModifiers::SHIFT)
                         && self.focus == FocusColumn::Panes =>
@@ -526,29 +544,66 @@ impl App {
                 _ => None,
             },
 
-            Mode::InspectPane { .. } => match (key.modifiers, key.code) {
-                (KeyModifiers::NONE, KeyCode::Esc)
-                | (KeyModifiers::NONE, KeyCode::Char('q') | KeyCode::Char('Q'))
-                | (KeyModifiers::NONE, KeyCode::Char('z') | KeyCode::Char('Z'))
-                | (KeyModifiers::NONE, KeyCode::Char(' ')) => Some(Action::ToggleInspect),
-                (KeyModifiers::NONE, KeyCode::Char('j') | KeyCode::Down) => {
-                    Some(Action::InspectScrollDown(1))
+            Mode::InspectPane {
+                is_searching,
+                search_query,
+                ..
+            } => {
+                if *is_searching {
+                    match (key.modifiers, key.code) {
+                        (KeyModifiers::NONE, KeyCode::Esc) => Some(Action::InspectSearchCancel),
+                        (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::InspectSearchSubmit),
+                        (KeyModifiers::NONE, KeyCode::Backspace) => {
+                            Some(Action::InspectSearchBackspace)
+                        }
+                        (m, KeyCode::Char(c)) if m.is_empty() || m == KeyModifiers::SHIFT => {
+                            Some(Action::InspectSearchInput(c))
+                        }
+                        _ => None,
+                    }
+                } else {
+                    match (key.modifiers, key.code) {
+                        (KeyModifiers::NONE, KeyCode::Char('/')) => {
+                            Some(Action::InspectStartSearch)
+                        }
+                        (KeyModifiers::NONE, KeyCode::Char('n')) => Some(Action::InspectSearchNext),
+                        (m, KeyCode::Char('N')) if m.is_empty() || m == KeyModifiers::SHIFT => {
+                            Some(Action::InspectSearchPrev)
+                        }
+                        (KeyModifiers::NONE, KeyCode::Esc) => {
+                            if search_query.is_some() {
+                                Some(Action::InspectSearchCancel)
+                            } else {
+                                Some(Action::ToggleInspect)
+                            }
+                        }
+                        (KeyModifiers::NONE, KeyCode::Char('q') | KeyCode::Char('Q'))
+                        | (KeyModifiers::NONE, KeyCode::Char('z') | KeyCode::Char('Z'))
+                        | (KeyModifiers::NONE, KeyCode::Char(' ')) => Some(Action::ToggleInspect),
+                        (KeyModifiers::NONE, KeyCode::Char('j') | KeyCode::Down) => {
+                            Some(Action::InspectScrollDown(1))
+                        }
+                        (KeyModifiers::NONE, KeyCode::Char('k') | KeyCode::Up) => {
+                            Some(Action::InspectScrollUp(1))
+                        }
+                        (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
+                            Some(Action::InspectScrollDown(10))
+                        }
+                        (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
+                            Some(Action::InspectScrollUp(10))
+                        }
+                        (KeyModifiers::NONE, KeyCode::Char('g')) => Some(Action::InspectScrollTop),
+                        (m, KeyCode::Char('G')) if m.is_empty() || m == KeyModifiers::SHIFT => {
+                            Some(Action::InspectScrollBottom)
+                        }
+                        (KeyModifiers::NONE, KeyCode::Char('c') | KeyCode::Char('C')) => {
+                            Some(Action::CopyPaneOutput)
+                        }
+                        (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::OpenSelection),
+                        _ => None,
+                    }
                 }
-                (KeyModifiers::NONE, KeyCode::Char('k') | KeyCode::Up) => {
-                    Some(Action::InspectScrollUp(1))
-                }
-                (KeyModifiers::CONTROL, KeyCode::Char('d')) => Some(Action::InspectScrollDown(10)),
-                (KeyModifiers::CONTROL, KeyCode::Char('u')) => Some(Action::InspectScrollUp(10)),
-                (KeyModifiers::NONE, KeyCode::Char('g')) => Some(Action::InspectScrollTop),
-                (m, KeyCode::Char('G')) if m.is_empty() || m == KeyModifiers::SHIFT => {
-                    Some(Action::InspectScrollBottom)
-                }
-                (KeyModifiers::NONE, KeyCode::Char('c') | KeyCode::Char('C')) => {
-                    Some(Action::CopyPaneOutput)
-                }
-                (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::OpenSelection),
-                _ => None,
-            },
+            }
 
             Mode::ConfirmKill(_) => match (key.modifiers, key.code) {
                 (m, KeyCode::Char('y') | KeyCode::Char('Y'))
@@ -571,7 +626,8 @@ impl App {
             Mode::PromptNewSession { .. }
             | Mode::PromptNewWindow { .. }
             | Mode::PromptRenameSession { .. }
-            | Mode::PromptRenameWindow { .. } => match (key.modifiers, key.code) {
+            | Mode::PromptRenameWindow { .. }
+            | Mode::PromptSendCommand { .. } => match (key.modifiers, key.code) {
                 (KeyModifiers::NONE, KeyCode::Esc) => Some(Action::CancelModal),
                 (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::ModalSubmit),
                 (KeyModifiers::NONE, KeyCode::Backspace) => Some(Action::ModalBackspace),
@@ -789,6 +845,8 @@ impl App {
                     self.mode = Mode::InspectPane {
                         pane_id,
                         scroll_offset: 0,
+                        search_query: None,
+                        is_searching: false,
                     };
                 }
             }
@@ -841,6 +899,198 @@ impl App {
                     && let Mode::InspectPane { scroll_offset, .. } = &mut self.mode
                 {
                     *scroll_offset = max_lines.saturating_sub(10);
+                }
+            }
+
+            Action::InspectStartSearch => {
+                if let Mode::InspectPane {
+                    is_searching,
+                    search_query,
+                    ..
+                } = &mut self.mode
+                {
+                    *is_searching = true;
+                    if search_query.is_none() {
+                        *search_query = Some(String::new());
+                    }
+                }
+            }
+
+            Action::InspectSearchInput(c) => {
+                let (pane_id, query) = if let Mode::InspectPane {
+                    search_query,
+                    pane_id,
+                    ..
+                } = &self.mode
+                {
+                    let mut q = search_query.clone().unwrap_or_default();
+                    q.push(c);
+                    (pane_id.clone(), q)
+                } else {
+                    return Ok(None);
+                };
+
+                let target_line = {
+                    let q_lower = query.to_lowercase();
+                    self.selected_window()
+                        .and_then(|w| w.get_pane(&pane_id))
+                        .and_then(|pane| {
+                            pane.preview_lines
+                                .iter()
+                                .position(|line| line.to_lowercase().contains(&q_lower))
+                        })
+                };
+
+                if let Mode::InspectPane {
+                    search_query,
+                    scroll_offset,
+                    ..
+                } = &mut self.mode
+                {
+                    *search_query = Some(query);
+                    if let Some(line_idx) = target_line {
+                        *scroll_offset = line_idx;
+                    }
+                }
+            }
+
+            Action::InspectSearchBackspace => {
+                let (pane_id, query) = if let Mode::InspectPane {
+                    search_query: Some(q),
+                    pane_id,
+                    ..
+                } = &self.mode
+                {
+                    let mut new_q = q.clone();
+                    new_q.pop();
+                    (pane_id.clone(), new_q)
+                } else {
+                    return Ok(None);
+                };
+
+                let target_line = if !query.is_empty() {
+                    let q_lower = query.to_lowercase();
+                    self.selected_window()
+                        .and_then(|w| w.get_pane(&pane_id))
+                        .and_then(|pane| {
+                            pane.preview_lines
+                                .iter()
+                                .position(|line| line.to_lowercase().contains(&q_lower))
+                        })
+                } else {
+                    None
+                };
+
+                if let Mode::InspectPane {
+                    search_query,
+                    scroll_offset,
+                    ..
+                } = &mut self.mode
+                {
+                    *search_query = Some(query);
+                    if let Some(line_idx) = target_line {
+                        *scroll_offset = line_idx;
+                    }
+                }
+            }
+
+            Action::InspectSearchSubmit => {
+                if let Mode::InspectPane { is_searching, .. } = &mut self.mode {
+                    *is_searching = false;
+                }
+            }
+
+            Action::InspectSearchCancel => {
+                if let Mode::InspectPane {
+                    is_searching,
+                    search_query,
+                    ..
+                } = &mut self.mode
+                {
+                    *is_searching = false;
+                    *search_query = None;
+                }
+            }
+
+            Action::InspectSearchNext => {
+                let (pane_id, query, current_offset) = if let Mode::InspectPane {
+                    search_query: Some(q),
+                    scroll_offset,
+                    pane_id,
+                    ..
+                } = &self.mode
+                {
+                    (pane_id.clone(), q.clone(), *scroll_offset)
+                } else {
+                    return Ok(None);
+                };
+
+                let q_lower = query.to_lowercase();
+                if !q_lower.is_empty()
+                    && let Some(pane) = self.selected_window().and_then(|w| w.get_pane(&pane_id))
+                {
+                    let next_match = pane
+                        .preview_lines
+                        .iter()
+                        .enumerate()
+                        .skip(current_offset + 1)
+                        .find(|(_, line)| line.to_lowercase().contains(&q_lower))
+                        .map(|(idx, _)| idx)
+                        .or_else(|| {
+                            pane.preview_lines
+                                .iter()
+                                .enumerate()
+                                .find(|(_, line)| line.to_lowercase().contains(&q_lower))
+                                .map(|(idx, _)| idx)
+                        });
+
+                    if let Some(idx) = next_match
+                        && let Mode::InspectPane { scroll_offset, .. } = &mut self.mode
+                    {
+                        *scroll_offset = idx;
+                    }
+                }
+            }
+
+            Action::InspectSearchPrev => {
+                let (pane_id, query, current_offset) = if let Mode::InspectPane {
+                    search_query: Some(q),
+                    scroll_offset,
+                    pane_id,
+                    ..
+                } = &self.mode
+                {
+                    (pane_id.clone(), q.clone(), *scroll_offset)
+                } else {
+                    return Ok(None);
+                };
+
+                let q_lower = query.to_lowercase();
+                if !q_lower.is_empty()
+                    && let Some(pane) = self.selected_window().and_then(|w| w.get_pane(&pane_id))
+                {
+                    let prev_match = if current_offset > 0 {
+                        pane.preview_lines[..current_offset]
+                            .iter()
+                            .enumerate()
+                            .rfind(|(_, line)| line.to_lowercase().contains(&q_lower))
+                            .map(|(idx, _)| idx)
+                    } else {
+                        None
+                    }
+                    .or_else(|| {
+                        pane.preview_lines
+                            .iter()
+                            .enumerate()
+                            .rfind(|(_, line)| line.to_lowercase().contains(&q_lower))
+                            .map(|(idx, _)| idx)
+                    });
+
+                    if let Some(idx) = prev_match
+                        && let Mode::InspectPane { scroll_offset, .. } = &mut self.mode
+                    {
+                        *scroll_offset = idx;
+                    }
                 }
             }
 
@@ -1371,6 +1621,30 @@ impl App {
                 }
             }
 
+            Action::PromptSendCommand => {
+                if let Some(pane) = self.selected_pane() {
+                    self.mode = Mode::PromptSendCommand {
+                        pane_id: pane.id.clone(),
+                        input: String::new(),
+                    };
+                }
+            }
+
+            Action::BreakPane => {
+                if let Some(pane) = self.selected_pane() {
+                    let pane_id = pane.id.clone();
+                    if let Err(e) = self.client.break_pane(&pane_id) {
+                        self.show_toast(format!("Break pane failed: {e}"), ToastLevel::Error);
+                    } else {
+                        self.show_toast(
+                            format!("Broke pane {} into new window", pane_id.0),
+                            ToastLevel::Success,
+                        );
+                        let _ = self.refresh_data();
+                    }
+                }
+            }
+
             Action::CancelModal => {
                 self.mode = Mode::Normal;
             }
@@ -1379,7 +1653,8 @@ impl App {
                 Mode::PromptNewSession { input }
                 | Mode::PromptNewWindow { input, .. }
                 | Mode::PromptRenameSession { input, .. }
-                | Mode::PromptRenameWindow { input, .. } => {
+                | Mode::PromptRenameWindow { input, .. }
+                | Mode::PromptSendCommand { input, .. } => {
                     input.push(c);
                 }
                 _ => {}
@@ -1389,7 +1664,8 @@ impl App {
                 Mode::PromptNewSession { input }
                 | Mode::PromptNewWindow { input, .. }
                 | Mode::PromptRenameSession { input, .. }
-                | Mode::PromptRenameWindow { input, .. } => {
+                | Mode::PromptRenameWindow { input, .. }
+                | Mode::PromptSendCommand { input, .. } => {
                     input.pop();
                 }
                 _ => {}
@@ -1482,6 +1758,23 @@ impl App {
                             }
                         } else {
                             self.show_toast("Invalid window name".to_string(), ToastLevel::Warning);
+                        }
+                    }
+                    Mode::PromptSendCommand { pane_id, input } => {
+                        let trimmed = input.trim();
+                        if !trimmed.is_empty() {
+                            if let Err(e) = self.client.send_keys(&pane_id, trimmed) {
+                                self.show_toast(
+                                    format!("Send keys failed: {e}"),
+                                    ToastLevel::Error,
+                                );
+                            } else {
+                                self.show_toast(
+                                    format!("Sent to {}: {trimmed}", pane_id.0),
+                                    ToastLevel::Success,
+                                );
+                                self.refresh_active_window_preview();
+                            }
                         }
                     }
                     _ => {}

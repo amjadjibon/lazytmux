@@ -8,11 +8,18 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
 
 pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
-    let (pane_id, scroll_offset) = match &app.mode {
+    let (pane_id, scroll_offset, search_query, is_searching) = match &app.mode {
         crate::app::Mode::InspectPane {
             pane_id,
             scroll_offset,
-        } => (pane_id, *scroll_offset),
+            search_query,
+            is_searching,
+        } => (
+            pane_id,
+            *scroll_offset,
+            search_query.as_deref(),
+            *is_searching,
+        ),
         _ => return,
     };
 
@@ -35,7 +42,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
         s_name, w_name, pane.id.0, pane.current_command
     );
 
-    // Compute overlay size (85% width, 85% height)
+    // Compute overlay size (88% width, 85% height)
     let overlay_area = centered_rect(88, 85, area);
     frame.render_widget(Clear, overlay_area);
 
@@ -43,12 +50,27 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(5),    // Body
-            Constraint::Length(1), // Keybindings footer
+            Constraint::Length(1), // Keybindings footer / search bar
         ])
         .split(overlay_area);
 
     let total_lines = pane.preview_lines.len();
-    let line_info = format!(" [Line {}/{}] ", scroll_offset + 1, total_lines.max(1));
+    let mut line_info = format!(" [Line {}/{}] ", scroll_offset + 1, total_lines.max(1));
+    if let Some(q) = search_query {
+        let q_lower = q.to_lowercase();
+        let match_count = pane
+            .preview_lines
+            .iter()
+            .filter(|l| l.to_lowercase().contains(&q_lower))
+            .count();
+        line_info = format!(
+            " [Line {}/{} · \"{}\": {} matches (n/N)] ",
+            scroll_offset + 1,
+            total_lines.max(1),
+            q,
+            match_count
+        );
+    }
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -83,37 +105,75 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
     let paragraph = Paragraph::new(content_text).block(block);
     frame.render_widget(paragraph, chunks[0]);
 
-    // Footer
-    let footer_line = Line::from(vec![
-        Span::styled(
-            " Esc ",
-            Style::default().bg(Color::DarkGray).fg(Color::White),
-        ),
-        Span::raw(" Back  "),
-        Span::styled(
-            " j/k ",
-            Style::default().bg(Color::DarkGray).fg(Color::White),
-        ),
-        Span::raw(" Scroll  "),
-        Span::styled(
-            " Ctrl+d/u ",
-            Style::default().bg(Color::DarkGray).fg(Color::White),
-        ),
-        Span::raw(" Page  "),
-        Span::styled(" c ", Style::default().bg(Color::DarkGray).fg(Color::White)),
-        Span::raw(" Copy  "),
-        Span::styled(
-            " Enter ",
-            Style::default()
-                .bg(Color::Cyan)
-                .fg(Color::Black)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(" Focus in Tmux"),
-    ]);
+    // Footer or Search Bar
+    if is_searching {
+        let q_display = search_query.unwrap_or("");
+        let search_line = Line::from(vec![
+            Span::styled(
+                " / Search: ",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                q_display,
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("█", Style::default().fg(Color::Yellow)),
+            Span::styled(
+                "  (Enter: finish · Esc: cancel)",
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]);
+        let search_widget = Paragraph::new(search_line);
+        frame.render_widget(search_widget, chunks[1]);
+    } else {
+        let mut footer_spans = vec![
+            Span::styled(
+                " Esc ",
+                Style::default().bg(Color::DarkGray).fg(Color::White),
+            ),
+            Span::raw(" Back  "),
+            Span::styled(
+                " j/k ",
+                Style::default().bg(Color::DarkGray).fg(Color::White),
+            ),
+            Span::raw(" Scroll  "),
+            Span::styled(
+                " Ctrl+d/u ",
+                Style::default().bg(Color::DarkGray).fg(Color::White),
+            ),
+            Span::raw(" Page  "),
+            Span::styled(" / ", Style::default().bg(Color::DarkGray).fg(Color::White)),
+            Span::raw(" Search  "),
+        ];
 
-    let footer_widget = Paragraph::new(footer_line).style(theme.dim);
-    frame.render_widget(footer_widget, chunks[1]);
+        if search_query.is_some() {
+            footer_spans.push(Span::styled(
+                " n/N ",
+                Style::default().bg(Color::DarkGray).fg(Color::White),
+            ));
+            footer_spans.push(Span::raw(" Next/Prev  "));
+        }
+
+        footer_spans.extend(vec![
+            Span::styled(" c ", Style::default().bg(Color::DarkGray).fg(Color::White)),
+            Span::raw(" Copy  "),
+            Span::styled(
+                " Enter ",
+                Style::default()
+                    .bg(Color::Cyan)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" Focus in Tmux"),
+        ]);
+
+        let footer_widget = Paragraph::new(Line::from(footer_spans)).style(theme.dim);
+        frame.render_widget(footer_widget, chunks[1]);
+    }
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {

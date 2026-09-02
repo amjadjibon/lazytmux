@@ -18,6 +18,13 @@ pub enum Action {
     InspectScrollDown(usize),
     InspectScrollTop,
     InspectScrollBottom,
+    InspectStartSearch,
+    InspectSearchInput(char),
+    InspectSearchBackspace,
+    InspectSearchSubmit,
+    InspectSearchNext,
+    InspectSearchPrev,
+    InspectSearchCancel,
     CopyPaneOutput,
 
     // Search Mode
@@ -39,6 +46,8 @@ pub enum Action {
     },
     PromptRenameSession,
     PromptRenameWindow,
+    PromptSendCommand,
+    BreakPane,
     PromptKill,
     ConfirmKill,
     CancelModal,
