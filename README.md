@@ -90,6 +90,8 @@ bind-key C-s display-popup -E -w 80% -h 80% "lazytmux"
 
 | Key | Context | Action |
 | --- | --- | --- |
+| `:` | **Panes** | **Send command / keystrokes direct to background pane** |
+| `b` | **Panes** | **Break pane into a new window** (`break-pane`) |
 | `n` | **Sessions** | Create new session (prompts for name) |
 | `n` | **Windows** | Create new window in selected session |
 | `n` | **Panes** | Create new split pane (`v` for vertical, `h` for horizontal) |
@@ -113,6 +115,8 @@ bind-key C-s display-popup -E -w 80% -h 80% "lazytmux"
 | `Ctrl + u` | Scroll up 10 lines |
 | `g` | Jump to top of scrollback |
 | `G` | Jump to bottom of scrollback |
+| `/` | **Interactive search inside scrollback history** |
+| `n` / `N` | **Jump to next / previous search match** |
 | `c` | Copy visible scrollback to clipboard |
 | `Esc` / `q` / `z` / `Space` | Exit inspect / zoom mode |
 

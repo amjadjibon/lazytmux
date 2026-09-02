@@ -67,10 +67,10 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
 
             let mut unique_branches = Vec::new();
             for p in &window.panes {
-                if let Some(ref b) = p.git_branch {
-                    if !unique_branches.contains(&b.as_str()) {
-                        unique_branches.push(b.as_str());
-                    }
+                if let Some(ref b) = p.git_branch
+                    && !unique_branches.contains(&b.as_str())
+                {
+                    unique_branches.push(b.as_str());
                 }
             }
 

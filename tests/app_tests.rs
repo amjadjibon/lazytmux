@@ -328,6 +328,8 @@ fn test_mouse_scroll_inspect() {
     app.mode = Mode::InspectPane {
         pane_id: lazytmux::domain::PaneId::from("%1"),
         scroll_offset: 0,
+        search_query: None,
+        is_searching: false,
     };
 
     // Mouse scroll down in inspect mode
@@ -478,5 +480,92 @@ fn test_multiple_panes_different_branches() {
     assert_eq!(win.panes[0].git_branch.as_deref(), Some("main"));
     if win.panes.len() > 1 {
         assert_eq!(win.panes[1].git_branch.as_deref(), Some("dev"));
+    }
+}
+
+#[test]
+fn test_send_keys_to_pane() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    app.focus = FocusColumn::Panes;
+    app.update(Action::PromptSendCommand).unwrap();
+    assert!(matches!(app.mode, Mode::PromptSendCommand { .. }));
+
+    // Input "echo hello"
+    for c in "echo hello".chars() {
+        app.update(Action::ModalInput(c)).unwrap();
+    }
+    app.update(Action::ModalSubmit).unwrap();
+    assert_eq!(app.mode, Mode::Normal);
+    assert!(app.toasts.last().unwrap().message.contains("echo hello"));
+}
+
+#[test]
+fn test_break_pane() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    app.focus = FocusColumn::Panes;
+    let initial_win_count = app.sessions[0].windows.len();
+    app.update(Action::BreakPane).unwrap();
+
+    assert!(app.toasts.last().unwrap().message.contains("Broke pane"));
+    assert_eq!(app.sessions[0].windows.len(), initial_win_count + 1);
+}
+
+#[test]
+fn test_inspect_in_buffer_search() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    app.focus = FocusColumn::Panes;
+    app.update(Action::ToggleInspect).unwrap();
+
+    // Set sample preview lines
+    let s_idx = app.selection.session_idx;
+    let w_idx = app.selection.window_idx;
+    let p_idx = app.selection.pane_idx;
+    app.sessions[s_idx].windows[w_idx].panes[p_idx].preview_lines = vec![
+        "Line 0: compiling target".to_string(),
+        "Line 1: warning: unused mut".to_string(),
+        "Line 2: error[E0308]: mismatched types".to_string(),
+        "Line 3: note: expected bool".to_string(),
+        "Line 4: error[E0425]: cannot find value".to_string(),
+        "Line 5: finished".to_string(),
+    ];
+
+    // Start search
+    app.update(Action::InspectStartSearch).unwrap();
+    if let Mode::InspectPane { is_searching, .. } = &app.mode {
+        assert!(is_searching);
+    }
+
+    // Type "error"
+    for c in "error".chars() {
+        app.update(Action::InspectSearchInput(c)).unwrap();
+    }
+
+    // First match is Line 2
+    if let Mode::InspectPane { scroll_offset, .. } = &app.mode {
+        assert_eq!(*scroll_offset, 2);
+    }
+
+    // Submit search
+    app.update(Action::InspectSearchSubmit).unwrap();
+    if let Mode::InspectPane { is_searching, .. } = &app.mode {
+        assert!(!is_searching);
+    }
+
+    // Next match should jump to Line 4
+    app.update(Action::InspectSearchNext).unwrap();
+    if let Mode::InspectPane { scroll_offset, .. } = &app.mode {
+        assert_eq!(*scroll_offset, 4);
+    }
+
+    // Previous match should jump back to Line 2
+    app.update(Action::InspectSearchPrev).unwrap();
+    if let Mode::InspectPane { scroll_offset, .. } = &app.mode {
+        assert_eq!(*scroll_offset, 2);
     }
 }

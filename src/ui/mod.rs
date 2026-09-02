@@ -47,6 +47,7 @@ pub fn render(app: &App, frame: &mut Frame) {
         | crate::app::Mode::PromptNewPane { .. }
         | crate::app::Mode::PromptRenameSession { .. }
         | crate::app::Mode::PromptRenameWindow { .. }
+        | crate::app::Mode::PromptSendCommand { .. }
         | crate::app::Mode::Help => {
             modals::render(app, frame, area, theme);
         }

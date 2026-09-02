@@ -42,6 +42,14 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
             area,
             theme,
         ),
+        Mode::PromptSendCommand { pane_id, input } => render_input_prompt(
+            &format!("Send Keys to Pane {}", pane_id.0),
+            "Command / keys to send (Enter executes in pane):",
+            input,
+            frame,
+            area,
+            theme,
+        ),
         Mode::Help => render_help(frame, area, theme),
         _ => {}
     }
@@ -358,6 +366,20 @@ fn render_help(frame: &mut Frame, area: Rect, theme: &Theme) {
             Span::raw("Toggle theme preset live (Tokyo Night, Catppuccin, Nord, Gruvbox, etc.)"),
         ]),
         Line::from(vec![
+            Span::styled(
+                "  :                     ",
+                Style::default().fg(Color::Yellow),
+            ),
+            Span::raw("Send command / keystrokes direct to background pane"),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                "  b                     ",
+                Style::default().fg(Color::Green),
+            ),
+            Span::raw("Break pane into a new window (break-pane)"),
+        ]),
+        Line::from(vec![
             Span::styled("  l                     ", Style::default().fg(Color::Cyan)),
             Span::raw("Cycle layout preset (even-h, even-v, main-h, main-v, tiled)"),
         ]),
@@ -405,6 +427,20 @@ fn render_help(frame: &mut Frame, area: Rect, theme: &Theme) {
         Line::from(vec![
             Span::styled("  g / G                 ", Style::default().fg(Color::Cyan)),
             Span::raw("Jump to top / bottom"),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                "  /                     ",
+                Style::default().fg(Color::Green),
+            ),
+            Span::raw("Search inside buffer history"),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                "  n / N                 ",
+                Style::default().fg(Color::Green),
+            ),
+            Span::raw("Jump to next / previous search match"),
         ]),
         Line::from(vec![
             Span::styled("  c                     ", Style::default().fg(Color::Cyan)),
