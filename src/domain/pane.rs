@@ -199,7 +199,8 @@ mod tests {
             80,
             24,
         );
-        let output_with_blanks = b"cargo build\nFinished dev target(s)\nprompt$ \n\n\n\n\n".to_vec();
+        let output_with_blanks =
+            b"cargo build\nFinished dev target(s)\nprompt$ \n\n\n\n\n".to_vec();
         pane.set_preview(output_with_blanks);
         assert_eq!(pane.preview_lines.len(), 3);
         assert_eq!(pane.preview_lines.last().unwrap(), "prompt$ ");

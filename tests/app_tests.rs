@@ -492,13 +492,29 @@ fn test_send_keys_to_pane() {
     app.update(Action::PromptSendCommand).unwrap();
     assert!(matches!(app.mode, Mode::PromptSendCommand { .. }));
 
-    // Input "echo hello"
+    // 1. Input "echo hello" and submit with Enter (sends prompt + Enter!)
     for c in "echo hello".chars() {
         app.update(Action::ModalInput(c)).unwrap();
     }
     app.update(Action::ModalSubmit).unwrap();
     assert_eq!(app.mode, Mode::Normal);
     assert!(app.toasts.last().unwrap().message.contains("echo hello"));
+    assert!(app.toasts.last().unwrap().message.contains("↵"));
+
+    // 2. Submit empty input (sends pure Enter keypress!)
+    app.update(Action::PromptSendCommand).unwrap();
+    app.update(Action::ModalSubmit).unwrap();
+    assert_eq!(app.mode, Mode::Normal);
+    assert!(app.toasts.last().unwrap().message.contains("<Enter>"));
+
+    // 3. Submit without Enter (paste only)
+    app.update(Action::PromptSendCommand).unwrap();
+    for c in "claude code prompt".chars() {
+        app.update(Action::ModalInput(c)).unwrap();
+    }
+    app.update(Action::ModalSubmitWithoutEnter).unwrap();
+    assert_eq!(app.mode, Mode::Normal);
+    assert!(app.toasts.last().unwrap().message.contains("(no Enter)"));
 }
 
 #[test]

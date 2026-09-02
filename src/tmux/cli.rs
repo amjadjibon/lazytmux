@@ -211,7 +211,18 @@ impl TmuxClient for CliTmuxClient {
     }
 
     fn send_keys(&mut self, pane: &PaneId, keys: &str) -> Result<()> {
-        self.run_cmd(&["send-keys", "-t", &pane.0, keys, "C-m"])?;
+        self.send_keys_ext(pane, keys, true)
+    }
+
+    fn send_keys_ext(&mut self, pane: &PaneId, keys: &str, with_enter: bool) -> Result<()> {
+        if !keys.is_empty() {
+            // Send literal text with -l -- so dashes, quotes, and special characters aren't parsed as flags or keys
+            self.run_cmd(&["send-keys", "-t", &pane.0, "-l", "--", keys])?;
+        }
+        if with_enter {
+            // Send Enter keypress to execute shell commands and submit interactive prompt text fields (Claude Code, Codex, AGY)
+            self.run_cmd(&["send-keys", "-t", &pane.0, "Enter"])?;
+        }
         Ok(())
     }
 

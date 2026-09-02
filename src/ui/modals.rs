@@ -43,8 +43,8 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
             theme,
         ),
         Mode::PromptSendCommand { pane_id, input } => render_input_prompt(
-            &format!("Send Keys to Pane {}", pane_id.0),
-            "Command / keys to send (Enter executes in pane):",
+            &format!("Send Prompt / Command to Pane {}", pane_id.0),
+            "Enter prompt/command (Enter sends prompt + Enter; Ctrl+S sends without Enter):",
             input,
             frame,
             area,
