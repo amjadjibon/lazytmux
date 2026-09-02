@@ -51,7 +51,15 @@ impl Pane {
 
     pub fn set_preview(&mut self, raw: Vec<u8>) {
         let text_lossy = String::from_utf8_lossy(&raw);
-        self.preview_lines = text_lossy.lines().map(|s| s.to_string()).collect();
+        let mut lines: Vec<String> = text_lossy.lines().map(|s| s.to_string()).collect();
+        while let Some(last) = lines.last() {
+            if last.trim().is_empty() {
+                lines.pop();
+            } else {
+                break;
+            }
+        }
+        self.preview_lines = lines;
         self.preview_raw = raw;
     }
 
@@ -62,10 +70,25 @@ impl Pane {
             }
             return Text::from(self.preview_lines.join("\n"));
         }
-        self.preview_raw
-            .as_slice()
-            .into_text()
-            .unwrap_or_else(|_| Text::from(String::from_utf8_lossy(&self.preview_raw).to_string()))
+        let mut text =
+            self.preview_raw.as_slice().into_text().unwrap_or_else(|_| {
+                Text::from(String::from_utf8_lossy(&self.preview_raw).to_string())
+            });
+
+        // Trim trailing empty lines so the widget displays the most recent output at the bottom
+        while let Some(last) = text.lines.last() {
+            if last.spans.iter().all(|s| s.content.trim().is_empty()) {
+                text.lines.pop();
+            } else {
+                break;
+            }
+        }
+
+        if text.lines.is_empty() {
+            Text::raw("No output captured")
+        } else {
+            text
+        }
     }
 }
 
@@ -161,6 +184,28 @@ mod tests {
         assert!(!pane.preview_lines.is_empty());
         let text = pane.preview_text();
         assert_eq!(text.lines.len(), 1);
+    }
+
+    #[test]
+    fn test_pane_preview_trims_trailing_blank_lines() {
+        let mut pane = Pane::new(
+            PaneId::from("%1"),
+            WindowId::from("@1"),
+            SessionId::from("$1"),
+            1,
+            true,
+            "zsh".to_string(),
+            PathBuf::from("/tmp"),
+            80,
+            24,
+        );
+        let output_with_blanks = b"cargo build\nFinished dev target(s)\nprompt$ \n\n\n\n\n".to_vec();
+        pane.set_preview(output_with_blanks);
+        assert_eq!(pane.preview_lines.len(), 3);
+        assert_eq!(pane.preview_lines.last().unwrap(), "prompt$ ");
+
+        let text = pane.preview_text();
+        assert_eq!(text.lines.len(), 3);
     }
 
     #[test]

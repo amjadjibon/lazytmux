@@ -226,10 +226,9 @@ impl App {
             && let Some(window) = session.windows.get_mut(w_idx)
         {
             for pane in &mut window.panes {
-                if pane.preview_lines.is_empty()
-                    && let Ok(raw) =
-                        self.client
-                            .capture_pane(&pane.id, self.config.pane_preview_lines, true)
+                if let Ok(raw) =
+                    self.client
+                        .capture_pane(&pane.id, self.config.pane_preview_lines, true)
                 {
                     pane.set_preview(raw);
                 }
@@ -812,6 +811,7 @@ impl App {
 
             Action::Tick => {
                 self.toasts.retain(|t| t.created_at.elapsed() < t.ttl);
+                self.refresh_active_window_preview();
             }
 
             Action::Refresh => {
@@ -1023,9 +1023,21 @@ impl App {
                     {
                         p.set_preview(raw);
                     }
+                    let scroll_offset = if self.last_area.height > 0 {
+                        let total_lines = self
+                            .selected_window()
+                            .and_then(|w| w.get_pane(&pane_id))
+                            .map(|p| p.preview_lines.len())
+                            .unwrap_or(0);
+                        let visible_height =
+                            (self.last_area.height * 85 / 100).saturating_sub(4) as usize;
+                        total_lines.saturating_sub(visible_height)
+                    } else {
+                        0
+                    };
                     self.mode = Mode::InspectPane {
                         pane_id,
-                        scroll_offset: 0,
+                        scroll_offset,
                         search_query: None,
                         is_searching: false,
                     };

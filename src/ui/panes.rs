@@ -164,7 +164,11 @@ fn render_pane_card(
     }
 
     let text = pane.preview_text();
-    let preview_widget = Paragraph::new(text).block(pane_block);
+    let inner_height = area.height.saturating_sub(2);
+    let total_lines = text.lines.len() as u16;
+    let scroll_y = total_lines.saturating_sub(inner_height);
+
+    let preview_widget = Paragraph::new(text).block(pane_block).scroll((scroll_y, 0));
     frame.render_widget(preview_widget, area);
 }
 
