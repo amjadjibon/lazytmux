@@ -200,6 +200,11 @@ pub fn render_footer(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
                 Style::default().bg(Color::DarkGray).fg(Color::White),
             ),
             Span::raw(" swap "),
+            Span::styled(
+                " +/- ",
+                Style::default().bg(Color::DarkGray).fg(Color::White),
+            ),
+            Span::raw(" resize "),
             Span::styled(" z ", Style::default().bg(Color::DarkGray).fg(Color::White)),
             Span::raw(" zoom "),
             Span::styled(" t ", Style::default().bg(Color::DarkGray).fg(Color::White)),

@@ -392,6 +392,27 @@ fn render_help(frame: &mut Frame, area: Rect, theme: &Theme) {
             Span::raw("Swap pane up/down (Panes) or Move window left/right (Windows)"),
         ]),
         Line::from(vec![
+            Span::styled(
+                "  + / -                 ",
+                Style::default().fg(Color::Green),
+            ),
+            Span::raw("Resize selected pane vertically (grow/shrink)"),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                "  Shift + ←/→/↑/↓, H/J/K/L",
+                Style::default().fg(Color::Green),
+            ),
+            Span::raw("Resize selected pane in 4 directions"),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                "  Mouse Drag / Buttons  ",
+                Style::default().fg(Color::Yellow),
+            ),
+            Span::raw("Drag pane to resize, or click [◀][▼][▲][▶][↕ swap] controls"),
+        ]),
+        Line::from(vec![
             Span::styled("  Ctrl + r              ", Style::default().fg(Color::Cyan)),
             Span::raw("Respawn pane process (restart crashed shell)"),
         ]),

@@ -98,6 +98,10 @@ bind-key C-s display-popup -E -w 80% -h 80% "lazytmux"
 | `r` / `R` / `F2` | **Sessions / Windows** | Rename active session or window |
 | `l` | **Panes** | Cycle layout preset (`even-h`, `even-v`, `main-h`, `main-v`, `tiled`) |
 | `s` | **Panes** | Toggle `synchronize-panes` (broadcast typing to all panes) |
+| `+` / `-` | **Panes** | **Resize pane vertically** (grow / shrink) |
+| `Shift + ←/→/↑/↓` | **Panes** | **Resize pane in 4 directions** (Left/Right/Up/Down) |
+| `H` / `J` / `K` / `L` | **Panes** | **Vim-style pane resizing** |
+| Mouse Drag | **Panes** | **Click and drag inside pane or click `[◀][▼][▲][▶][↕ swap]` controls** |
 | `[` / `]` | **Panes** | Swap pane position up / down (`swap-pane -U / -D`) |
 | `[` / `]` | **Windows** | Move window position left / right (`swap-window`) |
 | `Ctrl + r` | **Panes** | Respawn pane process (restart hung/crashed shell) |

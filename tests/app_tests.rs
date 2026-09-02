@@ -569,3 +569,67 @@ fn test_inspect_in_buffer_search() {
         assert_eq!(*scroll_offset, 2);
     }
 }
+
+#[test]
+fn test_resize_pane_actions() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    app.focus = FocusColumn::Panes;
+    let initial_toasts_len = app.toasts.len();
+
+    // Resize Up
+    app.update(Action::ResizePane(
+        lazytmux::tmux::client::ResizeDirection::Up,
+        3,
+    ))
+    .unwrap();
+    assert!(app.toasts.len() > initial_toasts_len);
+    assert!(app.toasts.last().unwrap().message.contains("Resized pane"));
+
+    // Resize Down
+    app.update(Action::ResizePane(
+        lazytmux::tmux::client::ResizeDirection::Down,
+        3,
+    ))
+    .unwrap();
+    assert!(app.toasts.last().unwrap().message.contains("down"));
+
+    // Resize Left
+    app.update(Action::ResizePane(
+        lazytmux::tmux::client::ResizeDirection::Left,
+        4,
+    ))
+    .unwrap();
+    assert!(app.toasts.last().unwrap().message.contains("left"));
+
+    // Resize Right
+    app.update(Action::ResizePane(
+        lazytmux::tmux::client::ResizeDirection::Right,
+        4,
+    ))
+    .unwrap();
+    assert!(app.toasts.last().unwrap().message.contains("right"));
+}
+
+#[test]
+fn test_mouse_drag_resize() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    app.focus = FocusColumn::Panes;
+    let p_id = app.selected_pane().unwrap().id.clone();
+    app.mouse_drag_start = Some((10, 10, p_id));
+
+    // Drag right by 5 units
+    app.update(Action::MouseDrag {
+        column: 15,
+        row: 10,
+    })
+    .unwrap();
+    assert_eq!(app.mouse_drag_start.as_ref().unwrap().0, 15);
+
+    // Mouse up clears drag anchor
+    app.update(Action::MouseUp).unwrap();
+    assert!(app.mouse_drag_start.is_none());
+}
