@@ -88,6 +88,8 @@ bind-key C-s display-popup -E -w 80% -h 80% "lazytmux"
 | `t` / `T` | **Toggle theme preset live** (Tokyo Night, Catppuccin, Nord, Gruvbox, Dracula, etc.) |
 | `<` / `>`, `,` / `.` | **Resize focused column width** (Sessions, Windows, Panes) |
 | Mouse Drag Borders | **Click and drag vertical separator borders between columns to resize parts** |
+| `\` / `\|` | **Toggle collapsible sidebars** (Full &rarr; Sessions collapsed &rarr; Wide Panes) |
+| Header `[◀]` / `[▶]` | **Click header buttons to collapse or expand sidebars with mouse** |
 | `z` / `Space` | Toggle fullscreen zoom / inspect mode on selected pane |
 | `?` | Open keybinding help overlay |
 | `q` / `Ctrl + c` | Quit LazyTmux |

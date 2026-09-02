@@ -697,3 +697,115 @@ fn test_keyboard_column_resize() {
         100
     );
 }
+
+#[test]
+fn test_sidebar_mode_cycle() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    assert_eq!(app.sidebar_mode, lazytmux::ui::SidebarMode::Full);
+    app.focus = FocusColumn::Sessions;
+
+    // Toggle 1: Full -> SessionsHidden
+    app.update(Action::ToggleSidebarMode).unwrap();
+    assert_eq!(app.sidebar_mode, lazytmux::ui::SidebarMode::SessionsHidden);
+    assert_eq!(app.focus, FocusColumn::Windows);
+    assert!(
+        app.toasts
+            .last()
+            .unwrap()
+            .message
+            .contains("Sessions collapsed")
+    );
+
+    // Toggle 2: SessionsHidden -> PanesOnly
+    app.update(Action::ToggleSidebarMode).unwrap();
+    assert_eq!(app.sidebar_mode, lazytmux::ui::SidebarMode::PanesOnly);
+    assert_eq!(app.focus, FocusColumn::Panes);
+    assert!(app.toasts.last().unwrap().message.contains("Wide Panes"));
+
+    // Toggle 3: PanesOnly -> Full
+    app.update(Action::ToggleSidebarMode).unwrap();
+    assert_eq!(app.sidebar_mode, lazytmux::ui::SidebarMode::Full);
+    assert!(app.toasts.last().unwrap().message.contains("Full"));
+}
+
+#[test]
+fn test_sidebar_mode_layout_geometry() {
+    let area = ratatui::layout::Rect::new(0, 0, 100, 30);
+    let ratios = (22, 28, 50);
+
+    // Full: all 3 columns have positive width
+    let full =
+        lazytmux::ui::AppLayout::split_with_mode(area, ratios, lazytmux::ui::SidebarMode::Full);
+    assert!(full.sessions_col.width > 0);
+    assert!(full.windows_col.width > 0);
+    assert!(full.panes_col.width > 0);
+
+    // SessionsHidden: sessions width is 0, windows + panes share full width
+    let hidden = lazytmux::ui::AppLayout::split_with_mode(
+        area,
+        ratios,
+        lazytmux::ui::SidebarMode::SessionsHidden,
+    );
+    assert_eq!(hidden.sessions_col.width, 0);
+    assert!(hidden.windows_col.width > 0);
+    assert!(hidden.panes_col.width > 0);
+    assert_eq!(
+        hidden.windows_col.width + hidden.panes_col.width,
+        full.columns_area.width
+    );
+
+    // PanesOnly: panes occupies 100% of columns area width
+    let panes_only = lazytmux::ui::AppLayout::split_with_mode(
+        area,
+        ratios,
+        lazytmux::ui::SidebarMode::PanesOnly,
+    );
+    assert_eq!(panes_only.sessions_col.width, 0);
+    assert_eq!(panes_only.windows_col.width, 0);
+    assert_eq!(panes_only.panes_col.width, full.columns_area.width);
+}
+
+#[test]
+fn test_mouse_header_buttons_collapse_expand() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    let area = ratatui::layout::Rect::new(0, 0, 100, 30);
+    app.last_area = area;
+
+    let layout =
+        lazytmux::ui::AppLayout::split_with_mode(area, app.column_ratios, app.sidebar_mode);
+
+    // 1. Click on [◀] in Sessions header (right side of sessions header)
+    app.update(Action::MouseClick {
+        column: layout.sessions_col.x + layout.sessions_col.width - 2,
+        row: layout.sessions_col.y,
+        double_click: false,
+    })
+    .unwrap();
+    assert_eq!(app.sidebar_mode, lazytmux::ui::SidebarMode::SessionsHidden);
+
+    // 2. Click on [◀] in Windows header (right side of windows header)
+    let layout2 =
+        lazytmux::ui::AppLayout::split_with_mode(area, app.column_ratios, app.sidebar_mode);
+    app.update(Action::MouseClick {
+        column: layout2.windows_col.x + layout2.windows_col.width - 2,
+        row: layout2.windows_col.y,
+        double_click: false,
+    })
+    .unwrap();
+    assert_eq!(app.sidebar_mode, lazytmux::ui::SidebarMode::PanesOnly);
+
+    // 3. Click on [▶ EXPAND SIDEBARS] in Panes header (left side of panes header)
+    let layout3 =
+        lazytmux::ui::AppLayout::split_with_mode(area, app.column_ratios, app.sidebar_mode);
+    app.update(Action::MouseClick {
+        column: layout3.panes_col.x + 3,
+        row: layout3.panes_col.y,
+        double_click: false,
+    })
+    .unwrap();
+    assert_eq!(app.sidebar_mode, lazytmux::ui::SidebarMode::Full);
+}

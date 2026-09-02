@@ -65,6 +65,8 @@ pub enum Action {
     RespawnPane,
     ResizePane(crate::tmux::client::ResizeDirection, usize),
     ResizeFocusedColumn(i16),
+    ToggleSidebarMode,
+    SetSidebarMode(crate::ui::SidebarMode),
 
     // Theme live switching
     NextTheme,

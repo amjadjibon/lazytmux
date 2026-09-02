@@ -7,7 +7,12 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 
 pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
     let focused = app.focus == FocusColumn::Panes;
-    let main_block = theme.block("PANES", focused);
+    let title = match app.sidebar_mode {
+        crate::ui::SidebarMode::PanesOnly => "[▶ EXPAND SIDEBARS] PANES",
+        crate::ui::SidebarMode::SessionsHidden => "[▶ SESSIONS] PANES",
+        crate::ui::SidebarMode::Full => "PANES",
+    };
+    let main_block = theme.block(title, focused);
 
     let window = match app.selected_window() {
         Some(w) => w,

@@ -8,7 +8,7 @@ use ratatui::widgets::{List, ListItem, Paragraph};
 
 pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
     let focused = app.focus == FocusColumn::Sessions;
-    let block = theme.block("SESSIONS", focused);
+    let block = theme.block("SESSIONS [◀]", focused);
 
     if app.sessions.is_empty() {
         let empty_msg = Paragraph::new(" No sessions\n Press 'n' to create")

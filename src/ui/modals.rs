@@ -337,6 +337,17 @@ fn render_help(frame: &mut Frame, area: Rect, theme: &Theme) {
             Span::raw("Drag column separator borders to resize 3 parts"),
         ]),
         Line::from(vec![
+            Span::styled(
+                r"  \ / |                 ",
+                Style::default().fg(Color::Cyan),
+            ),
+            Span::raw("Toggle sidebar collapse: Full → Sessions collapsed → Wide Panes"),
+        ]),
+        Line::from(vec![
+            Span::styled("  Header [◀] / [▶]      ", Style::default().fg(Color::Cyan)),
+            Span::raw("Click header buttons to collapse or expand sidebars"),
+        ]),
+        Line::from(vec![
             Span::styled("  ?                     ", Style::default().fg(Color::Cyan)),
             Span::raw("Toggle this help modal"),
         ]),

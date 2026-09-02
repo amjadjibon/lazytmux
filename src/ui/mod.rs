@@ -8,24 +8,30 @@ pub mod sessions;
 pub mod theme;
 pub mod windows;
 
+pub use layout::{AppLayout, SidebarMode};
 pub use theme::{Theme, ThemePreset};
 
 use crate::app::App;
-use layout::AppLayout;
 use ratatui::Frame;
 
 pub fn render(app: &App, frame: &mut Frame) {
     let theme = &app.theme;
     let area = frame.area();
-    let app_layout = AppLayout::split_with_ratios(area, app.column_ratios);
+    let app_layout = AppLayout::split_with_mode(area, app.column_ratios, app.sidebar_mode);
 
     // 1. Header
     footer::render_header(app, frame, app_layout.header, theme);
 
-    // 2. Main 3 columns
-    sessions::render(app, frame, app_layout.sessions_col, theme);
-    windows::render(app, frame, app_layout.windows_col, theme);
-    panes::render(app, frame, app_layout.panes_col, theme);
+    // 2. Main columns (only render visible columns)
+    if app_layout.sessions_col.width > 0 {
+        sessions::render(app, frame, app_layout.sessions_col, theme);
+    }
+    if app_layout.windows_col.width > 0 {
+        windows::render(app, frame, app_layout.windows_col, theme);
+    }
+    if app_layout.panes_col.width > 0 {
+        panes::render(app, frame, app_layout.panes_col, theme);
+    }
 
     // 3. Breadcrumbs
     footer::render_breadcrumbs(app, frame, app_layout.breadcrumbs, theme);
