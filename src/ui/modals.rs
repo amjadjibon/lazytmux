@@ -329,6 +329,14 @@ fn render_help(frame: &mut Frame, area: Rect, theme: &Theme) {
             Span::raw("Force refresh tmux state"),
         ]),
         Line::from(vec![
+            Span::styled("  < / >, , / .          ", Style::default().fg(Color::Cyan)),
+            Span::raw("Resize focused column width (Sessions, Windows, Panes)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  Mouse Drag Borders    ", Style::default().fg(Color::Cyan)),
+            Span::raw("Drag column separator borders to resize 3 parts"),
+        ]),
+        Line::from(vec![
             Span::styled("  ?                     ", Style::default().fg(Color::Cyan)),
             Span::raw("Toggle this help modal"),
         ]),

@@ -86,6 +86,8 @@ bind-key C-s display-popup -E -w 80% -h 80% "lazytmux"
 | `Enter` | Attach to session / Focus window / Handoff to pane |
 | `/` | Open interactive fuzzy finder (with category filter tabs) |
 | `t` / `T` | **Toggle theme preset live** (Tokyo Night, Catppuccin, Nord, Gruvbox, Dracula, etc.) |
+| `<` / `>`, `,` / `.` | **Resize focused column width** (Sessions, Windows, Panes) |
+| Mouse Drag Borders | **Click and drag vertical separator borders between columns to resize parts** |
 | `z` / `Space` | Toggle fullscreen zoom / inspect mode on selected pane |
 | `?` | Open keybinding help overlay |
 | `q` / `Ctrl + c` | Quit LazyTmux |

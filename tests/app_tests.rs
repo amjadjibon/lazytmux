@@ -633,3 +633,67 @@ fn test_mouse_drag_resize() {
     app.update(Action::MouseUp).unwrap();
     assert!(app.mouse_drag_start.is_none());
 }
+
+#[test]
+fn test_column_border_detection_and_mouse_drag() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    let area = ratatui::layout::Rect::new(0, 0, 100, 30);
+    app.last_area = area;
+
+    let layout = lazytmux::ui::layout::AppLayout::split_with_ratios(area, app.column_ratios);
+    // Border 0 is between sessions and windows
+    let b0 = layout.sessions_col.x + layout.sessions_col.width;
+    assert_eq!(layout.find_column_border_at(b0, 10), Some(0));
+
+    // Click on border 0
+    app.update(Action::MouseClick {
+        column: b0,
+        row: 10,
+        double_click: false,
+    })
+    .unwrap();
+    assert_eq!(app.mouse_drag_col_border, Some(0));
+
+    // Drag border right to x = 30
+    app.update(Action::MouseDrag {
+        column: 30,
+        row: 10,
+    })
+    .unwrap();
+    assert_eq!(app.column_ratios.0, 30);
+    assert_eq!(
+        app.column_ratios.0 + app.column_ratios.1 + app.column_ratios.2,
+        100
+    );
+
+    // Mouse up clears drag state
+    app.update(Action::MouseUp).unwrap();
+    assert!(app.mouse_drag_col_border.is_none());
+}
+
+#[test]
+fn test_keyboard_column_resize() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    let initial_s = app.column_ratios.0;
+    app.focus = FocusColumn::Sessions;
+
+    // Expand Sessions column
+    app.update(Action::ResizeFocusedColumn(4)).unwrap();
+    assert_eq!(app.column_ratios.0, initial_s + 4);
+    assert_eq!(
+        app.column_ratios.0 + app.column_ratios.1 + app.column_ratios.2,
+        100
+    );
+
+    // Shrink Sessions column
+    app.update(Action::ResizeFocusedColumn(-2)).unwrap();
+    assert_eq!(app.column_ratios.0, initial_s + 2);
+    assert_eq!(
+        app.column_ratios.0 + app.column_ratios.1 + app.column_ratios.2,
+        100
+    );
+}

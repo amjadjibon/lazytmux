@@ -17,7 +17,7 @@ use ratatui::Frame;
 pub fn render(app: &App, frame: &mut Frame) {
     let theme = &app.theme;
     let area = frame.area();
-    let app_layout = AppLayout::split(area);
+    let app_layout = AppLayout::split_with_ratios(area, app.column_ratios);
 
     // 1. Header
     footer::render_header(app, frame, app_layout.header, theme);

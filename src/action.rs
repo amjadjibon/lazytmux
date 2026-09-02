@@ -64,6 +64,7 @@ pub enum Action {
     MoveWindowRight,
     RespawnPane,
     ResizePane(crate::tmux::client::ResizeDirection, usize),
+    ResizeFocusedColumn(i16),
 
     // Theme live switching
     NextTheme,

@@ -154,6 +154,8 @@ pub struct App {
     pub last_area: ratatui::layout::Rect,
     pub layout_preset_idx: usize,
     pub mouse_drag_start: Option<(u16, u16, PaneId)>,
+    pub column_ratios: (u16, u16, u16),
+    pub mouse_drag_col_border: Option<usize>,
 }
 
 impl App {
@@ -180,6 +182,8 @@ impl App {
             last_area: ratatui::layout::Rect::default(),
             layout_preset_idx: 0,
             mouse_drag_start: None,
+            column_ratios: (22, 28, 50),
+            mouse_drag_col_border: None,
         };
         let _ = app.refresh_data();
         app
@@ -459,13 +463,13 @@ impl App {
                 {
                     Some(Action::BreakPane)
                 }
-                (m, KeyCode::Char('[') | KeyCode::Char('<'))
+                (m, KeyCode::Char('['))
                     if (m.is_empty() || m == KeyModifiers::SHIFT)
                         && self.focus == FocusColumn::Panes =>
                 {
                     Some(Action::SwapPaneUp)
                 }
-                (m, KeyCode::Char(']') | KeyCode::Char('>'))
+                (m, KeyCode::Char(']'))
                     if (m.is_empty() || m == KeyModifiers::SHIFT)
                         && self.focus == FocusColumn::Panes =>
                 {
@@ -552,13 +556,13 @@ impl App {
                     ))
                 }
                 // Window specific shortcuts (reordering)
-                (m, KeyCode::Char('[') | KeyCode::Char('<'))
+                (m, KeyCode::Char('['))
                     if (m.is_empty() || m == KeyModifiers::SHIFT)
                         && self.focus == FocusColumn::Windows =>
                 {
                     Some(Action::MoveWindowLeft)
                 }
-                (m, KeyCode::Char(']') | KeyCode::Char('>'))
+                (m, KeyCode::Char(']'))
                     if (m.is_empty() || m == KeyModifiers::SHIFT)
                         && self.focus == FocusColumn::Windows =>
                 {
@@ -579,6 +583,17 @@ impl App {
                     FocusColumn::Sessions => Some(Action::PromptRenameSession),
                     FocusColumn::Windows | FocusColumn::Panes => Some(Action::PromptRenameWindow),
                 },
+                // Column width resizing shortcuts (< / >, , / ., { / })
+                (m, KeyCode::Char('<') | KeyCode::Char('{') | KeyCode::Char(','))
+                    if m.is_empty() || m == KeyModifiers::SHIFT =>
+                {
+                    Some(Action::ResizeFocusedColumn(-2))
+                }
+                (m, KeyCode::Char('>') | KeyCode::Char('}') | KeyCode::Char('.'))
+                    if m.is_empty() || m == KeyModifiers::SHIFT =>
+                {
+                    Some(Action::ResizeFocusedColumn(2))
+                }
                 _ => None,
             },
 
@@ -1367,6 +1382,36 @@ impl App {
                 }
             }
 
+            Action::ResizeFocusedColumn(delta) => match self.focus {
+                FocusColumn::Sessions => {
+                    let cur_s = self.column_ratios.0 as i16;
+                    let new_s = (cur_s + delta).clamp(12, 45) as u16;
+                    let diff = new_s as i16 - cur_s;
+                    let cur_p = self.column_ratios.2 as i16;
+                    let new_p = (cur_p - diff).max(20) as u16;
+                    let new_w = 100 - new_s - new_p;
+                    self.column_ratios = (new_s, new_w, new_p);
+                }
+                FocusColumn::Windows => {
+                    let cur_w = self.column_ratios.1 as i16;
+                    let new_w = (cur_w + delta).clamp(15, 50) as u16;
+                    let diff = new_w as i16 - cur_w;
+                    let cur_p = self.column_ratios.2 as i16;
+                    let new_p = (cur_p - diff).max(20) as u16;
+                    let new_s = 100 - new_w - new_p;
+                    self.column_ratios = (new_s, new_w, new_p);
+                }
+                FocusColumn::Panes => {
+                    let cur_p = self.column_ratios.2 as i16;
+                    let new_p = (cur_p + delta).clamp(25, 70) as u16;
+                    let diff = new_p as i16 - cur_p;
+                    let cur_w = self.column_ratios.1 as i16;
+                    let new_w = (cur_w - diff).max(15) as u16;
+                    let new_s = 100 - new_w - new_p;
+                    self.column_ratios = (new_s, new_w, new_p);
+                }
+            },
+
             Action::ToggleSearch => {
                 if let Mode::Search { .. } = self.mode {
                     self.mode = Mode::Normal;
@@ -1622,7 +1667,17 @@ impl App {
                 row,
                 double_click,
             } => {
-                let layout = crate::ui::layout::AppLayout::split(self.last_area);
+                let layout = crate::ui::layout::AppLayout::split_with_ratios(
+                    self.last_area,
+                    self.column_ratios,
+                );
+
+                // Check if clicked on a vertical column border to initiate column resizing
+                if let Some(border_idx) = layout.find_column_border_at(column, row) {
+                    self.mouse_drag_col_border = Some(border_idx);
+                    self.mouse_drag_start = None;
+                    return Ok(None);
+                }
 
                 // Check if clicked in sessions column
                 if column >= layout.sessions_col.x
@@ -1749,6 +1804,39 @@ impl App {
             }
 
             Action::MouseDrag { column, row } => {
+                if let Some(border_idx) = self.mouse_drag_col_border {
+                    let layout = crate::ui::layout::AppLayout::split_with_ratios(
+                        self.last_area,
+                        self.column_ratios,
+                    );
+                    let total_w = layout.columns_area.width as f32;
+                    if total_w > 10.0 {
+                        if border_idx == 0 {
+                            let rel_x = column.saturating_sub(layout.columns_area.x) as f32;
+                            let new_s = ((rel_x / total_w) * 100.0).round() as u16;
+                            let clamped_s = new_s.clamp(12, 45);
+                            let remain = 100 - clamped_s;
+                            let cur_w = self.column_ratios.1 as f32;
+                            let cur_p = self.column_ratios.2 as f32;
+                            let w_ratio = cur_w / (cur_w + cur_p).max(1.0);
+                            let new_w = ((remain as f32) * w_ratio).round() as u16;
+                            let clamped_w = new_w.clamp(15, remain.saturating_sub(20));
+                            let clamped_p = remain - clamped_w;
+                            self.column_ratios = (clamped_s, clamped_w, clamped_p);
+                        } else if border_idx == 1 {
+                            let rel_x = column.saturating_sub(layout.columns_area.x) as f32;
+                            let s_pct = self.column_ratios.0;
+                            let target_w_and_s = ((rel_x / total_w) * 100.0).round() as u16;
+                            let new_w = target_w_and_s.saturating_sub(s_pct);
+                            let max_w = (100 - s_pct).saturating_sub(20);
+                            let clamped_w = new_w.clamp(15, max_w);
+                            let clamped_p = 100 - s_pct - clamped_w;
+                            self.column_ratios = (s_pct, clamped_w, clamped_p);
+                        }
+                    }
+                    return Ok(None);
+                }
+
                 if let Some((start_col, start_row, pane_id)) = self.mouse_drag_start.clone() {
                     let dx = column as i32 - start_col as i32;
                     let dy = row as i32 - start_row as i32;
@@ -1790,6 +1878,7 @@ impl App {
 
             Action::MouseUp => {
                 self.mouse_drag_start = None;
+                self.mouse_drag_col_border = None;
             }
 
             Action::PromptRenameSession => {
