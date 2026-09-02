@@ -8,6 +8,10 @@
 >
 > Inspired by the ergonomics of *lazygit* and *lazydocker*, **LazyTmux** replaces arcane tmux session/window key sequences with an interactive, instant 3-column TUI.
 
+<p align="center">
+  <img src="./assets/demo.gif" alt="LazyTmux Demo" width="850">
+</p>
+
 ---
 
 ## ✨ Features
