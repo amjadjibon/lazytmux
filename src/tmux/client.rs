@@ -26,6 +26,8 @@ pub trait TmuxClient: Send + Sync {
     fn swap_pane(&mut self, pane: &PaneId, up: bool) -> Result<()>;
     fn swap_window(&mut self, window: &WindowId, left: bool) -> Result<()>;
     fn respawn_pane(&mut self, pane: &PaneId) -> Result<()>;
+    fn send_keys(&mut self, pane: &PaneId, keys: &str) -> Result<()>;
+    fn break_pane(&mut self, pane: &PaneId) -> Result<()>;
 
     // Focus & Navigation
     fn focus_pane(&self, session: &SessionId, window: &WindowId, pane: &PaneId) -> Result<()>;

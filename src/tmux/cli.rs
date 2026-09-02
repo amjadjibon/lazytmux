@@ -210,6 +210,16 @@ impl TmuxClient for CliTmuxClient {
         Ok(())
     }
 
+    fn send_keys(&mut self, pane: &PaneId, keys: &str) -> Result<()> {
+        self.run_cmd(&["send-keys", "-t", &pane.0, keys, "C-m"])?;
+        Ok(())
+    }
+
+    fn break_pane(&mut self, pane: &PaneId) -> Result<()> {
+        self.run_cmd(&["break-pane", "-d", "-t", &pane.0])?;
+        Ok(())
+    }
+
     fn focus_pane(&self, session: &SessionId, window: &WindowId, pane: &PaneId) -> Result<()> {
         // Run select commands
         let _ = self.run_cmd(&["select-window", "-t", &window.0]);

@@ -428,6 +428,45 @@ impl TmuxClient for MockTmuxClient {
         Ok(())
     }
 
+    fn send_keys(&mut self, pane: &PaneId, keys: &str) -> Result<()> {
+        for s in &mut self.sessions {
+            for w in &mut s.windows {
+                if let Some(p) = w.panes.iter_mut().find(|p| &p.id == pane) {
+                    p.preview_lines.push(format!("$ {keys}"));
+                    p.preview_lines.push("Execution complete.".to_string());
+                    return Ok(());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn break_pane(&mut self, pane: &PaneId) -> Result<()> {
+        for s in &mut self.sessions {
+            for w_idx in 0..s.windows.len() {
+                if let Some(p_idx) = s.windows[w_idx].panes.iter().position(|p| &p.id == pane) {
+                    let mut broken_pane = s.windows[w_idx].panes.remove(p_idx);
+                    self.counter += 1;
+                    let new_win_id = WindowId(format!("@{}", self.counter * 10));
+                    broken_pane.window_id = new_win_id.clone();
+                    let mut new_win = Window::new(
+                        new_win_id,
+                        s.id.clone(),
+                        s.windows.len() as u32 + 1,
+                        broken_pane.current_command.clone(),
+                        true,
+                        "".to_string(),
+                    );
+                    new_win.panes.push(broken_pane);
+                    s.windows.push(new_win);
+                    s.window_count = s.windows.len();
+                    return Ok(());
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn focus_pane(&self, _session: &SessionId, _window: &WindowId, _pane: &PaneId) -> Result<()> {
         Ok(())
     }
