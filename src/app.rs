@@ -153,6 +153,7 @@ pub struct App {
     pub is_mock: bool,
     pub last_area: ratatui::layout::Rect,
     pub layout_preset_idx: usize,
+    pub mouse_drag_start: Option<(u16, u16, PaneId)>,
 }
 
 impl App {
@@ -178,6 +179,7 @@ impl App {
             is_mock,
             last_area: ratatui::layout::Rect::default(),
             layout_preset_idx: 0,
+            mouse_drag_start: None,
         };
         let _ = app.refresh_data();
         app
@@ -469,6 +471,86 @@ impl App {
                 {
                     Some(Action::SwapPaneDown)
                 }
+                // Pane resize shortcuts (+ / -, Shift+Arrows, Shift+H/J/K/L)
+                (m, KeyCode::Char('+') | KeyCode::Char('='))
+                    if (m.is_empty() || m == KeyModifiers::SHIFT)
+                        && self.focus == FocusColumn::Panes =>
+                {
+                    Some(Action::ResizePane(
+                        crate::tmux::client::ResizeDirection::Down,
+                        3,
+                    ))
+                }
+                (KeyModifiers::NONE, KeyCode::Char('-')) if self.focus == FocusColumn::Panes => {
+                    Some(Action::ResizePane(
+                        crate::tmux::client::ResizeDirection::Up,
+                        3,
+                    ))
+                }
+                (m, KeyCode::Left)
+                    if m.contains(KeyModifiers::SHIFT) && self.focus == FocusColumn::Panes =>
+                {
+                    Some(Action::ResizePane(
+                        crate::tmux::client::ResizeDirection::Left,
+                        4,
+                    ))
+                }
+                (m, KeyCode::Right)
+                    if m.contains(KeyModifiers::SHIFT) && self.focus == FocusColumn::Panes =>
+                {
+                    Some(Action::ResizePane(
+                        crate::tmux::client::ResizeDirection::Right,
+                        4,
+                    ))
+                }
+                (m, KeyCode::Up)
+                    if m.contains(KeyModifiers::SHIFT) && self.focus == FocusColumn::Panes =>
+                {
+                    Some(Action::ResizePane(
+                        crate::tmux::client::ResizeDirection::Up,
+                        2,
+                    ))
+                }
+                (m, KeyCode::Down)
+                    if m.contains(KeyModifiers::SHIFT) && self.focus == FocusColumn::Panes =>
+                {
+                    Some(Action::ResizePane(
+                        crate::tmux::client::ResizeDirection::Down,
+                        2,
+                    ))
+                }
+                (m, KeyCode::Char('H'))
+                    if m.contains(KeyModifiers::SHIFT) && self.focus == FocusColumn::Panes =>
+                {
+                    Some(Action::ResizePane(
+                        crate::tmux::client::ResizeDirection::Left,
+                        4,
+                    ))
+                }
+                (m, KeyCode::Char('L'))
+                    if m.contains(KeyModifiers::SHIFT) && self.focus == FocusColumn::Panes =>
+                {
+                    Some(Action::ResizePane(
+                        crate::tmux::client::ResizeDirection::Right,
+                        4,
+                    ))
+                }
+                (m, KeyCode::Char('K'))
+                    if m.contains(KeyModifiers::SHIFT) && self.focus == FocusColumn::Panes =>
+                {
+                    Some(Action::ResizePane(
+                        crate::tmux::client::ResizeDirection::Up,
+                        2,
+                    ))
+                }
+                (m, KeyCode::Char('J'))
+                    if m.contains(KeyModifiers::SHIFT) && self.focus == FocusColumn::Panes =>
+                {
+                    Some(Action::ResizePane(
+                        crate::tmux::client::ResizeDirection::Down,
+                        2,
+                    ))
+                }
                 // Window specific shortcuts (reordering)
                 (m, KeyCode::Char('[') | KeyCode::Char('<'))
                     if (m.is_empty() || m == KeyModifiers::SHIFT)
@@ -663,6 +745,11 @@ impl App {
                 row: mouse.row,
                 double_click: false,
             }),
+            MouseEventKind::Drag(crossterm::event::MouseButton::Left) => Some(Action::MouseDrag {
+                column: mouse.column,
+                row: mouse.row,
+            }),
+            MouseEventKind::Up(crossterm::event::MouseButton::Left) => Some(Action::MouseUp),
             MouseEventKind::ScrollUp => Some(Action::MouseScrollUp {
                 column: mouse.column,
                 row: mouse.row,
@@ -1259,6 +1346,27 @@ impl App {
                 }
             }
 
+            Action::ResizePane(dir, amount) => {
+                if let Some(pane) = self.selected_pane() {
+                    let p_id = pane.id.clone();
+                    if let Err(e) = self.client.resize_pane(&p_id, dir, amount) {
+                        self.show_toast(format!("Resize failed: {e}"), ToastLevel::Error);
+                    } else {
+                        let dir_name = match dir {
+                            crate::tmux::client::ResizeDirection::Up => "up",
+                            crate::tmux::client::ResizeDirection::Down => "down",
+                            crate::tmux::client::ResizeDirection::Left => "left",
+                            crate::tmux::client::ResizeDirection::Right => "right",
+                        };
+                        self.show_toast(
+                            format!("Resized pane {} {dir_name} ({amount})", p_id.0),
+                            ToastLevel::Success,
+                        );
+                        let _ = self.refresh_data();
+                    }
+                }
+            }
+
             Action::ToggleSearch => {
                 if let Mode::Search { .. } = self.mode {
                     self.mode = Mode::Normal;
@@ -1574,14 +1682,49 @@ impl App {
                             .inner(layout.panes_col);
 
                         let mut found_pane_id = None;
-                        if let Some(root) = crate::domain::LayoutNode::parse(&window.layout_str) {
-                            found_pane_id = root.find_pane_at(inner_panes_area, column, row);
+                        let mut found_rect = None;
+                        if let Some(root) = crate::domain::LayoutNode::parse(&window.layout_str)
+                            && let Some((p_id, r)) =
+                                root.find_pane_rect_at(inner_panes_area, column, row)
+                        {
+                            found_pane_id = Some(p_id);
+                            found_rect = Some(r);
                         }
 
                         if let Some(p_id) = found_pane_id {
                             if let Some(pos) = window.panes.iter().position(|p| p.id == p_id) {
                                 self.selection.pane_idx = pos;
                             }
+                            // Check if click was on bottom border controls ([◀] [▼] [▲] [▶] [↕ swap])
+                            if let Some(rect) = found_rect
+                                && row == rect.y + rect.height.saturating_sub(1)
+                            {
+                                let col_offset = column.saturating_sub(rect.x);
+                                if (1..=4).contains(&col_offset) {
+                                    return self.update(Action::ResizePane(
+                                        crate::tmux::client::ResizeDirection::Left,
+                                        4,
+                                    ));
+                                } else if (5..=8).contains(&col_offset) {
+                                    return self.update(Action::ResizePane(
+                                        crate::tmux::client::ResizeDirection::Down,
+                                        2,
+                                    ));
+                                } else if (9..=12).contains(&col_offset) {
+                                    return self.update(Action::ResizePane(
+                                        crate::tmux::client::ResizeDirection::Up,
+                                        2,
+                                    ));
+                                } else if (13..=16).contains(&col_offset) {
+                                    return self.update(Action::ResizePane(
+                                        crate::tmux::client::ResizeDirection::Right,
+                                        4,
+                                    ));
+                                } else if (17..=26).contains(&col_offset) {
+                                    return self.update(Action::SwapPaneDown);
+                                }
+                            }
+                            self.mouse_drag_start = Some((column, row, p_id));
                         } else if !window.panes.is_empty() && row > inner_panes_area.y {
                             let pane_height =
                                 inner_panes_area.height / window.panes.len().max(1) as u16;
@@ -1591,7 +1734,9 @@ impl App {
                             {
                                 let idx = clicked_idx as usize;
                                 if idx < window.panes.len() {
+                                    let pane_id = window.panes[idx].id.clone();
                                     self.selection.pane_idx = idx;
+                                    self.mouse_drag_start = Some((column, row, pane_id));
                                 }
                             }
                         }
@@ -1601,6 +1746,50 @@ impl App {
                         }
                     }
                 }
+            }
+
+            Action::MouseDrag { column, row } => {
+                if let Some((start_col, start_row, pane_id)) = self.mouse_drag_start.clone() {
+                    let dx = column as i32 - start_col as i32;
+                    let dy = row as i32 - start_row as i32;
+                    if dx >= 3 {
+                        let _ = self.client.resize_pane(
+                            &pane_id,
+                            crate::tmux::client::ResizeDirection::Right,
+                            dx.unsigned_abs() as usize,
+                        );
+                        self.mouse_drag_start = Some((column, row, pane_id));
+                        let _ = self.refresh_data();
+                    } else if dx <= -3 {
+                        let _ = self.client.resize_pane(
+                            &pane_id,
+                            crate::tmux::client::ResizeDirection::Left,
+                            dx.unsigned_abs() as usize,
+                        );
+                        self.mouse_drag_start = Some((column, row, pane_id));
+                        let _ = self.refresh_data();
+                    } else if dy >= 2 {
+                        let _ = self.client.resize_pane(
+                            &pane_id,
+                            crate::tmux::client::ResizeDirection::Down,
+                            dy.unsigned_abs() as usize,
+                        );
+                        self.mouse_drag_start = Some((column, row, pane_id));
+                        let _ = self.refresh_data();
+                    } else if dy <= -2 {
+                        let _ = self.client.resize_pane(
+                            &pane_id,
+                            crate::tmux::client::ResizeDirection::Up,
+                            dy.unsigned_abs() as usize,
+                        );
+                        self.mouse_drag_start = Some((column, row, pane_id));
+                        let _ = self.refresh_data();
+                    }
+                }
+            }
+
+            Action::MouseUp => {
+                self.mouse_drag_start = None;
             }
 
             Action::PromptRenameSession => {

@@ -129,7 +129,7 @@ fn render_pane_card(
         pane.id.0, pane.current_command, branch_str, active_tag
     );
 
-    let pane_block = Block::default()
+    let mut pane_block = Block::default()
         .borders(Borders::ALL)
         .border_type(app.theme.border_type)
         .border_style(border_style)
@@ -139,6 +139,14 @@ fn render_pane_card(
         } else {
             app.theme.title
         });
+
+    if is_selected && area.height >= 4 {
+        if area.width >= 35 {
+            pane_block = pane_block.title_bottom(" [◀] [▼] [▲] [▶] [↕ swap] ");
+        } else if area.width >= 20 {
+            pane_block = pane_block.title_bottom(" [◀][▼][▲][▶] ");
+        }
+    }
 
     let text = pane.preview_text();
     let preview_widget = Paragraph::new(text).block(pane_block);

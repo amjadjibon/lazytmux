@@ -63,6 +63,7 @@ pub enum Action {
     MoveWindowLeft,
     MoveWindowRight,
     RespawnPane,
+    ResizePane(crate::tmux::client::ResizeDirection, usize),
 
     // Theme live switching
     NextTheme,
@@ -74,6 +75,11 @@ pub enum Action {
         row: u16,
         double_click: bool,
     },
+    MouseDrag {
+        column: u16,
+        row: u16,
+    },
+    MouseUp,
     MouseScrollUp {
         column: u16,
         row: u16,
