@@ -10,6 +10,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
     let title = match app.sidebar_mode {
         crate::ui::SidebarMode::PanesOnly => "[▶ EXPAND SIDEBARS] PANES",
         crate::ui::SidebarMode::SessionsHidden => "[▶ SESSIONS] PANES",
+        crate::ui::SidebarMode::WindowsHidden => "[▶ WINDOWS] PANES",
         crate::ui::SidebarMode::Full => "PANES",
     };
     let main_block = theme.block(title, focused);

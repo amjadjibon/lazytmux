@@ -8,7 +8,11 @@ use ratatui::widgets::{List, ListItem, Paragraph};
 
 pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
     let focused = app.focus == FocusColumn::Sessions;
-    let block = theme.block("SESSIONS [◀]", focused);
+    let title = match app.sidebar_mode {
+        crate::ui::SidebarMode::WindowsHidden => "SESSIONS [◀] [▶ Windows]",
+        _ => "SESSIONS [◀]",
+    };
+    let block = theme.block(title, focused);
 
     if app.sessions.is_empty() {
         let empty_msg = Paragraph::new(" No sessions\n Press 'n' to create")

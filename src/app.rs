@@ -878,6 +878,11 @@ impl App {
                         self.focus = FocusColumn::Windows;
                     }
                 }
+                crate::ui::SidebarMode::WindowsHidden => {
+                    if self.focus == FocusColumn::Panes {
+                        self.focus = FocusColumn::Sessions;
+                    }
+                }
                 crate::ui::SidebarMode::PanesOnly => {}
             },
 
@@ -900,6 +905,11 @@ impl App {
                         self.focus = FocusColumn::Panes;
                     }
                 }
+                crate::ui::SidebarMode::WindowsHidden => {
+                    if self.focus == FocusColumn::Sessions && self.selected_pane().is_some() {
+                        self.focus = FocusColumn::Panes;
+                    }
+                }
                 crate::ui::SidebarMode::PanesOnly => {}
             },
 
@@ -912,6 +922,10 @@ impl App {
                 crate::ui::SidebarMode::SessionsHidden => match self.focus {
                     FocusColumn::Windows => self.focus = FocusColumn::Panes,
                     _ => self.focus = FocusColumn::Windows,
+                },
+                crate::ui::SidebarMode::WindowsHidden => match self.focus {
+                    FocusColumn::Sessions => self.focus = FocusColumn::Panes,
+                    _ => self.focus = FocusColumn::Sessions,
                 },
                 crate::ui::SidebarMode::PanesOnly => {
                     self.focus = FocusColumn::Panes;
@@ -926,6 +940,10 @@ impl App {
                 },
                 crate::ui::SidebarMode::SessionsHidden => match self.focus {
                     FocusColumn::Panes => self.focus = FocusColumn::Windows,
+                    _ => self.focus = FocusColumn::Panes,
+                },
+                crate::ui::SidebarMode::WindowsHidden => match self.focus {
+                    FocusColumn::Panes => self.focus = FocusColumn::Sessions,
                     _ => self.focus = FocusColumn::Panes,
                 },
                 crate::ui::SidebarMode::PanesOnly => {
@@ -1458,6 +1476,7 @@ impl App {
                 let next_mode = match self.sidebar_mode {
                     crate::ui::SidebarMode::Full => crate::ui::SidebarMode::SessionsHidden,
                     crate::ui::SidebarMode::SessionsHidden => crate::ui::SidebarMode::PanesOnly,
+                    crate::ui::SidebarMode::WindowsHidden => crate::ui::SidebarMode::PanesOnly,
                     crate::ui::SidebarMode::PanesOnly => crate::ui::SidebarMode::Full,
                 };
                 return self.update(Action::SetSidebarMode(next_mode));
@@ -1475,6 +1494,15 @@ impl App {
                         }
                         self.show_toast(
                             "View: Sessions collapsed (Windows + Panes)".to_string(),
+                            ToastLevel::Info,
+                        );
+                    }
+                    crate::ui::SidebarMode::WindowsHidden => {
+                        if self.focus == FocusColumn::Windows {
+                            self.focus = FocusColumn::Sessions;
+                        }
+                        self.show_toast(
+                            "View: Windows collapsed (Sessions + Panes)".to_string(),
                             ToastLevel::Info,
                         );
                     }
@@ -1763,17 +1791,26 @@ impl App {
                     && row >= layout.sessions_col.y
                     && row < layout.sessions_col.y + layout.sessions_col.height
                 {
-                    // Check if clicked on [◀] button on header row
+                    // Check if clicked on [◀] or [▶ Windows] button on header row
                     if row == layout.sessions_col.y {
                         let rel_x = column.saturating_sub(layout.sessions_col.x);
-                        if rel_x >= 9
+                        if self.sidebar_mode == crate::ui::SidebarMode::WindowsHidden && rel_x >= 14
+                        {
+                            return self
+                                .update(Action::SetSidebarMode(crate::ui::SidebarMode::Full));
+                        }
+                        if rel_x >= 8
                             || column
                                 >= layout.sessions_col.x
                                     + layout.sessions_col.width.saturating_sub(6)
                         {
-                            return self.update(Action::SetSidebarMode(
-                                crate::ui::SidebarMode::SessionsHidden,
-                            ));
+                            let next_mode =
+                                if self.sidebar_mode == crate::ui::SidebarMode::WindowsHidden {
+                                    crate::ui::SidebarMode::PanesOnly
+                                } else {
+                                    crate::ui::SidebarMode::SessionsHidden
+                                };
+                            return self.update(Action::SetSidebarMode(next_mode));
                         }
                     }
 
@@ -1802,17 +1839,34 @@ impl App {
                 {
                     // Check header row buttons ([▶ Sessions] on left, [◀] on right)
                     if row == layout.windows_col.y {
-                        if self.sidebar_mode == crate::ui::SidebarMode::SessionsHidden
-                            && column < layout.windows_col.x + 13
+                        let rel_x = column.saturating_sub(layout.windows_col.x);
+                        if self.sidebar_mode == crate::ui::SidebarMode::SessionsHidden && rel_x < 14
                         {
                             return self
                                 .update(Action::SetSidebarMode(crate::ui::SidebarMode::Full));
                         }
-                        if column
-                            >= layout.windows_col.x + layout.windows_col.width.saturating_sub(6)
-                        {
-                            return self
-                                .update(Action::SetSidebarMode(crate::ui::SidebarMode::PanesOnly));
+                        let is_collapse = match self.sidebar_mode {
+                            crate::ui::SidebarMode::SessionsHidden => {
+                                rel_x >= 20
+                                    || column
+                                        >= layout.windows_col.x
+                                            + layout.windows_col.width.saturating_sub(6)
+                            }
+                            _ => {
+                                rel_x >= 8
+                                    || column
+                                        >= layout.windows_col.x
+                                            + layout.windows_col.width.saturating_sub(6)
+                            }
+                        };
+                        if is_collapse {
+                            let next_mode =
+                                if self.sidebar_mode == crate::ui::SidebarMode::SessionsHidden {
+                                    crate::ui::SidebarMode::PanesOnly
+                                } else {
+                                    crate::ui::SidebarMode::WindowsHidden
+                                };
+                            return self.update(Action::SetSidebarMode(next_mode));
                         }
                     }
 

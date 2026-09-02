@@ -808,4 +808,26 @@ fn test_mouse_header_buttons_collapse_expand() {
     })
     .unwrap();
     assert_eq!(app.sidebar_mode, lazytmux::ui::SidebarMode::Full);
+
+    // 4. Click on [◀] in Windows header directly from Full mode (collapses Windows!)
+    let layout4 =
+        lazytmux::ui::AppLayout::split_with_mode(area, app.column_ratios, app.sidebar_mode);
+    app.update(Action::MouseClick {
+        column: layout4.windows_col.x + 10, // right on "[◀]" next to "WINDOWS"
+        row: layout4.windows_col.y,
+        double_click: false,
+    })
+    .unwrap();
+    assert_eq!(app.sidebar_mode, lazytmux::ui::SidebarMode::WindowsHidden);
+
+    // 5. Click on [▶ Windows] in Sessions header (restores Windows!)
+    let layout5 =
+        lazytmux::ui::AppLayout::split_with_mode(area, app.column_ratios, app.sidebar_mode);
+    app.update(Action::MouseClick {
+        column: layout5.sessions_col.x + 16,
+        row: layout5.sessions_col.y,
+        double_click: false,
+    })
+    .unwrap();
+    assert_eq!(app.sidebar_mode, lazytmux::ui::SidebarMode::Full);
 }

@@ -5,6 +5,7 @@ pub enum SidebarMode {
     #[default]
     Full, // Sessions, Windows, Panes all visible
     SessionsHidden, // Sessions hidden, Windows & Panes visible
+    WindowsHidden,  // Windows hidden, Sessions & Panes visible
     PanesOnly,      // Both Sessions & Windows hidden, Panes full width
 }
 
@@ -82,6 +83,26 @@ impl AppLayout {
                 };
                 (empty_sessions, col_chunks[0], col_chunks[1])
             }
+            SidebarMode::WindowsHidden => {
+                let (s_pct, _, p_pct) = ratios;
+                let remain = (s_pct + p_pct).max(1) as u32;
+                let s_ratio = ((s_pct as u32 * 100) / remain) as u16;
+                let panes_ratio = 100 - s_ratio;
+                let col_chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Percentage(s_ratio),
+                        Constraint::Percentage(panes_ratio),
+                    ])
+                    .split(columns_area);
+                let empty_windows = Rect {
+                    x: columns_area.x,
+                    y: columns_area.y,
+                    width: 0,
+                    height: columns_area.height,
+                };
+                (col_chunks[0], empty_windows, col_chunks[1])
+            }
             SidebarMode::PanesOnly => {
                 let empty_sessions = Rect {
                     x: columns_area.x,
@@ -112,7 +133,7 @@ impl AppLayout {
     }
 
     /// Check if coordinates (x, y) fall on or adjacent to visible vertical split borders.
-    /// Returns Some(0) if on border between Sessions & Windows.
+    /// Returns Some(0) if on border between Sessions & Windows (or Sessions & Panes if WindowsHidden).
     /// Returns Some(1) if on border between Windows & Panes.
     pub fn find_column_border_at(&self, x: u16, y: u16) -> Option<usize> {
         if y < self.columns_area.y || y >= self.columns_area.y + self.columns_area.height {
@@ -139,6 +160,14 @@ impl AppLayout {
                 let b1 = self.windows_col.x + self.windows_col.width;
                 if (x as i32 - b1 as i32).abs() <= 1 {
                     return Some(1);
+                }
+                None
+            }
+            SidebarMode::WindowsHidden => {
+                // Only border between sessions and panes is visible
+                let b0 = self.sessions_col.x + self.sessions_col.width;
+                if (x as i32 - b0 as i32).abs() <= 1 {
+                    return Some(0);
                 }
                 None
             }
