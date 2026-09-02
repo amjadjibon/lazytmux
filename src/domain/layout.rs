@@ -1,4 +1,5 @@
 use super::id::PaneId;
+use super::window::Window;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LayoutSplit {
@@ -63,6 +64,28 @@ impl LayoutNode {
         match split {
             LayoutSplit::Horizontal => self.width(),
             LayoutSplit::Vertical => self.height(),
+        }
+    }
+
+    pub fn leaf_count(&self) -> usize {
+        match self {
+            LayoutNode::Leaf { .. } => 1,
+            LayoutNode::Container { children, .. } => children.iter().map(|c| c.leaf_count()).sum(),
+        }
+    }
+
+    pub fn all_panes_found(&self, window: &Window) -> bool {
+        match self {
+            LayoutNode::Leaf { pane_id, .. } => {
+                if let Some(id) = pane_id {
+                    window.get_pane(id).is_some()
+                } else {
+                    window.panes.len() == 1
+                }
+            }
+            LayoutNode::Container { children, .. } => {
+                children.iter().all(|c| c.all_panes_found(window))
+            }
         }
     }
 

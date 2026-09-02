@@ -437,13 +437,22 @@ Press Ctrl+C to stop"
     }
 }
 
+fn pane_id_num(pane: &Pane) -> String {
+    let s = pane.id.0.trim_start_matches('%');
+    if s.is_empty() {
+        pane.index.to_string()
+    } else {
+        s.to_string()
+    }
+}
+
 pub fn generate_layout_string(panes: &[Pane], layout: &str) -> String {
     let count = panes.len();
     if count == 0 {
         return "0000,160x50,0,0,0".to_string();
     }
     if count == 1 {
-        return format!("0000,160x50,0,0,{}", panes[0].index);
+        return format!("0000,160x50,0,0,{}", pane_id_num(&panes[0]));
     }
 
     match layout {
@@ -454,7 +463,7 @@ pub fn generate_layout_string(panes: &[Pane], layout: &str) -> String {
                 .enumerate()
                 .map(|(i, p)| {
                     let x = i as u16 * width_per_pane;
-                    format!("{width_per_pane}x50,{x},0,{}", p.index)
+                    format!("{width_per_pane}x50,{x},0,{}", pane_id_num(p))
                 })
                 .collect::<Vec<_>>()
                 .join(",");
@@ -467,7 +476,7 @@ pub fn generate_layout_string(panes: &[Pane], layout: &str) -> String {
                 .enumerate()
                 .map(|(i, p)| {
                     let y = i as u16 * height_per_pane;
-                    format!("160x{height_per_pane},0,{y},{}", p.index)
+                    format!("160x{height_per_pane},0,{y},{}", pane_id_num(p))
                 })
                 .collect::<Vec<_>>()
                 .join(",");
@@ -483,13 +492,13 @@ pub fn generate_layout_string(panes: &[Pane], layout: &str) -> String {
                 .enumerate()
                 .map(|(i, p)| {
                     let x = i as u16 * sub_w;
-                    format!("{sub_w}x{bot_h},{x},{top_h},{}", p.index)
+                    format!("{sub_w}x{bot_h},{x},{top_h},{}", pane_id_num(p))
                 })
                 .collect::<Vec<_>>()
                 .join(",");
             format!(
                 "0000,160x50,0,0[160x{top_h},0,0,{},160x{bot_h},0,{top_h}{{{sub_panes}}}]",
-                panes[0].index
+                pane_id_num(&panes[0])
             )
         }
         "main-vertical" => {
@@ -502,13 +511,13 @@ pub fn generate_layout_string(panes: &[Pane], layout: &str) -> String {
                 .enumerate()
                 .map(|(i, p)| {
                     let y = i as u16 * sub_h;
-                    format!("{side_w}x{sub_h},{main_w},{y},{}", p.index)
+                    format!("{side_w}x{sub_h},{main_w},{y},{}", pane_id_num(p))
                 })
                 .collect::<Vec<_>>()
                 .join(",");
             format!(
                 "0000,160x50,0,0{{{main_w}x50,0,0,{},{side_w}x50,{main_w},0[{sub_panes}]}}",
-                panes[0].index
+                pane_id_num(&panes[0])
             )
         }
         _ => {
@@ -519,7 +528,7 @@ pub fn generate_layout_string(panes: &[Pane], layout: &str) -> String {
                 .enumerate()
                 .map(|(i, p)| {
                     let x = i as u16 * width_per_pane;
-                    format!("{width_per_pane}x50,{x},0,{}", p.index)
+                    format!("{width_per_pane}x50,{x},0,{}", pane_id_num(p))
                 })
                 .collect::<Vec<_>>()
                 .join(",");

@@ -32,9 +32,18 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
     frame.render_widget(main_block, area);
 
     // Try parsing the tmux window_layout AST to render true 2D geometry
-    if let Some(root_node) = LayoutNode::parse(&window.layout_str) {
-        render_layout_node(&root_node, window, app, frame, inner_area, focused);
+    let rendered_with_layout = if let Some(root_node) = LayoutNode::parse(&window.layout_str) {
+        if root_node.leaf_count() == window.panes.len() && root_node.all_panes_found(window) {
+            render_layout_node(&root_node, window, app, frame, inner_area, focused);
+            true
+        } else {
+            false
+        }
     } else {
+        false
+    };
+
+    if !rendered_with_layout {
         render_fallback(window, app, frame, inner_area, focused);
     }
 }

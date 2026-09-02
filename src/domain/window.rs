@@ -44,10 +44,34 @@ impl Window {
     }
 
     pub fn get_pane(&self, pane_id: &PaneId) -> Option<&Pane> {
-        self.panes.iter().find(|p| &p.id == pane_id)
+        if let Some(p) = self.panes.iter().find(|p| &p.id == pane_id) {
+            return Some(p);
+        }
+        let num_str = pane_id.0.trim_start_matches('%');
+        if let Ok(idx) = num_str.parse::<u32>() {
+            if let Some(p) = self.panes.iter().find(|p| p.index == idx) {
+                return Some(p);
+            }
+            if idx > 0 && (idx as usize) <= self.panes.len() {
+                return Some(&self.panes[(idx - 1) as usize]);
+            }
+        }
+        None
     }
 
     pub fn get_pane_mut(&mut self, pane_id: &PaneId) -> Option<&mut Pane> {
-        self.panes.iter_mut().find(|p| &p.id == pane_id)
+        if let Some(pos) = self.panes.iter().position(|p| &p.id == pane_id) {
+            return Some(&mut self.panes[pos]);
+        }
+        let num_str = pane_id.0.trim_start_matches('%');
+        if let Ok(idx) = num_str.parse::<u32>() {
+            if let Some(pos) = self.panes.iter().position(|p| p.index == idx) {
+                return Some(&mut self.panes[pos]);
+            }
+            if idx > 0 && (idx as usize) <= self.panes.len() {
+                return Some(&mut self.panes[(idx - 1) as usize]);
+            }
+        }
+        None
     }
 }
