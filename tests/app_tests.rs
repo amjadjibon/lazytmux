@@ -831,3 +831,62 @@ fn test_mouse_header_buttons_collapse_expand() {
     .unwrap();
     assert_eq!(app.sidebar_mode, lazytmux::ui::SidebarMode::Full);
 }
+
+#[test]
+fn test_mouse_double_click_triggers_enter() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+
+    let area = ratatui::layout::Rect::new(0, 0, 100, 30);
+    app.last_area = area;
+    let layout = lazytmux::ui::AppLayout::split(area);
+
+    // Double-clicking on a session item (row = sessions_col.y + 1)
+    let action = app
+        .update(Action::MouseClick {
+            column: layout.sessions_col.x + 2,
+            row: layout.sessions_col.y + 1,
+            double_click: true,
+        })
+        .unwrap();
+
+    // Verify it triggers Action::Handoff (Action::OpenSelection / Enter equivalent!)
+    assert!(action.is_some());
+    match action.unwrap() {
+        Action::Handoff { .. } => {}
+        other => panic!("Expected Handoff action on double click, got {:?}", other),
+    }
+
+    // Also verify handle_mouse_event detects two quick clicks as double_click: true
+    let m1 = crossterm::event::MouseEvent {
+        kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+        column: 10,
+        row: 5,
+        modifiers: crossterm::event::KeyModifiers::NONE,
+    };
+    let a1 = app.handle_mouse_event(m1, area);
+    assert_eq!(
+        a1,
+        Some(Action::MouseClick {
+            column: 10,
+            row: 5,
+            double_click: false,
+        })
+    );
+
+    let m2 = crossterm::event::MouseEvent {
+        kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+        column: 10,
+        row: 5,
+        modifiers: crossterm::event::KeyModifiers::NONE,
+    };
+    let a2 = app.handle_mouse_event(m2, area);
+    assert_eq!(
+        a2,
+        Some(Action::MouseClick {
+            column: 10,
+            row: 5,
+            double_click: true,
+        })
+    );
+}

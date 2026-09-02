@@ -348,6 +348,10 @@ fn render_help(frame: &mut Frame, area: Rect, theme: &Theme) {
             Span::raw("Click header buttons to collapse or expand sidebars"),
         ]),
         Line::from(vec![
+            Span::styled("  Double Click          ", Style::default().fg(Color::Cyan)),
+            Span::raw("Attach to session / Focus window / Handoff to pane (Enter)"),
+        ]),
+        Line::from(vec![
             Span::styled("  ?                     ", Style::default().fg(Color::Cyan)),
             Span::raw("Toggle this help modal"),
         ]),

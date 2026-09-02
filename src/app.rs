@@ -157,6 +157,7 @@ pub struct App {
     pub column_ratios: (u16, u16, u16),
     pub mouse_drag_col_border: Option<usize>,
     pub sidebar_mode: crate::ui::SidebarMode,
+    pub last_click: Option<(Instant, u16, u16)>,
 }
 
 impl App {
@@ -186,6 +187,7 @@ impl App {
             column_ratios: (22, 28, 50),
             mouse_drag_col_border: None,
             sidebar_mode: crate::ui::SidebarMode::Full,
+            last_click: None,
         };
         let _ = app.refresh_data();
         app
@@ -763,11 +765,28 @@ impl App {
         self.last_area = area;
         use crossterm::event::MouseEventKind;
         match mouse.kind {
-            MouseEventKind::Down(crossterm::event::MouseButton::Left) => Some(Action::MouseClick {
-                column: mouse.column,
-                row: mouse.row,
-                double_click: false,
-            }),
+            MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
+                let now = Instant::now();
+                let double_click = if let Some((prev_time, prev_col, prev_row)) = self.last_click {
+                    now.duration_since(prev_time).as_millis() <= 450
+                        && (mouse.column as i32 - prev_col as i32).abs() <= 1
+                        && (mouse.row as i32 - prev_row as i32).abs() <= 1
+                } else {
+                    false
+                };
+
+                if double_click {
+                    self.last_click = None;
+                } else {
+                    self.last_click = Some((now, mouse.column, mouse.row));
+                }
+
+                Some(Action::MouseClick {
+                    column: mouse.column,
+                    row: mouse.row,
+                    double_click,
+                })
+            }
             MouseEventKind::Drag(crossterm::event::MouseButton::Left) => Some(Action::MouseDrag {
                 column: mouse.column,
                 row: mouse.row,
@@ -1771,6 +1790,23 @@ impl App {
                 row,
                 double_click,
             } => {
+                if let Mode::Help = self.mode {
+                    self.mode = Mode::Normal;
+                    return Ok(None);
+                }
+                if let Mode::Search { .. } = self.mode {
+                    if double_click {
+                        return self.update(Action::SearchSelect);
+                    }
+                    return Ok(None);
+                }
+                if let Mode::InspectPane { .. } = self.mode {
+                    if double_click {
+                        return self.update(Action::OpenSelection);
+                    }
+                    return Ok(None);
+                }
+
                 let layout = crate::ui::layout::AppLayout::split_with_mode(
                     self.last_area,
                     self.column_ratios,

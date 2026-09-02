@@ -84,6 +84,7 @@ bind-key C-s display-popup -E -w 80% -h 80% "lazytmux"
 | `Tab` | Cycle to next column |
 | `Shift + Tab` | Cycle to previous column |
 | `Enter` | Attach to session / Focus window / Handoff to pane |
+| Mouse Double Click | **Attach to session / Focus window / Handoff to pane (Same as Enter)** |
 | `/` | Open interactive fuzzy finder (with category filter tabs) |
 | `t` / `T` | **Toggle theme preset live** (Tokyo Night, Catppuccin, Nord, Gruvbox, Dracula, etc.) |
 | `<` / `>`, `,` / `.` | **Resize focused column width** (Sessions, Windows, Panes) |
