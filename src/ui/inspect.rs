@@ -1,10 +1,9 @@
 use crate::app::App;
 use crate::ui::theme::Theme;
-use ansi_to_tui::IntoText;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span, Text};
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
 
 pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
@@ -88,23 +87,11 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
         )
         .title_bottom(line_info);
 
-    // Slice preview lines to the visible viewport. Taking everything from the
-    // scroll offset to the end of a 2000-line buffer meant joining and
-    // ANSI-parsing all of it on every frame, only for the widget to clip it.
+    // Parse only the visible viewport. Taking everything from the scroll offset
+    // to the end of a 2000-line buffer meant ANSI-parsing all of it on every
+    // frame, only for the widget to clip it.
     let viewport_height = chunks[0].height.saturating_sub(2) as usize;
-    let visible_lines: Vec<String> = pane
-        .preview_lines
-        .iter()
-        .skip(scroll_offset)
-        .take(viewport_height.max(1))
-        .cloned()
-        .collect();
-
-    let joined = visible_lines.join("\n");
-    let content_text = joined
-        .as_bytes()
-        .into_text()
-        .unwrap_or_else(|_| Text::raw(joined));
+    let content_text = pane.preview_window(scroll_offset, viewport_height.max(1));
 
     let paragraph = Paragraph::new(content_text).block(block);
     frame.render_widget(paragraph, chunks[0]);

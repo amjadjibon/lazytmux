@@ -364,6 +364,19 @@ To keep the UI running smoothly at 60 FPS without stutters from subprocess execu
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
+Implemented in `src/tmux/poller.rs`. The worker owns its own `CliTmuxClient`
+(a unit struct, so there is no shared state and no lock), polls on the configured
+interval, and publishes each tree as `AppEvent::Data` into the same mpsc queue
+the main loop already drains. The UI sends it a `PreviewContext` naming the
+visible panes and the Inspect depth, so only what is on screen is captured, and
+a burst of navigation collapses into a single refresh.
+
+Mutations (kill, rename, split, send-keys) still run inline on the main thread:
+they are discrete user actions that need their error reported synchronously, and
+`SplitPane` reads the refreshed tree to select the pane it just created. Their
+follow-up *refresh* is delegated to the poller. Mock mode attaches no poller and
+refreshes inline, which keeps tests deterministic.
+
 ### Action / Event Pattern
 1. **Events**: Key presses, window resizes, and background tick timers.
 2. **Actions**: Intentions emitted by event handlers (`Action::FocusPane(PaneId)`, `Action::KillSession(SessionId)`).

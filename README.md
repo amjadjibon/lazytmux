@@ -186,7 +186,7 @@ border_style = "rounded"
 ```
 
 - **Domain Layer (`src/domain/`)**: Strongly typed domain models (`SessionId`, `WindowId`, `PaneId`) and recursive-descent tmux `window_layout` AST parser.
-- **Tmux Integration (`src/tmux/`)**: Resilient `\t`-delimited parser, subprocess query executor, mock test runner, and zero-flicker TTY handoff.
+- **Tmux Integration (`src/tmux/`)**: Resilient `\t`-delimited parser, subprocess query executor, background poller thread (tmux queries never run on the UI thread), mock test runner, and zero-flicker TTY handoff.
 - **UI & Widgets (`src/ui/`)**: Ratatui 3-column workspace, 2D layout geometry visualizer, theme tokens, and modal dialogs.
 
 ---

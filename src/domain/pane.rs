@@ -18,6 +18,10 @@ pub struct Pane {
     pub git_branch: Option<String>,
     pub width: u16,
     pub height: u16,
+    /// Captured output as plain text, one entry per line, with terminal escape
+    /// sequences removed and trailing blank lines dropped. This is what search,
+    /// clipboard copy, and line counts work against; rendering goes through
+    /// [`Pane::preview_window`], which colours from `preview_raw`.
     pub preview_lines: Vec<String>,
     pub preview_raw: Vec<u8>,
     /// tmux `pane_synchronized`: input sent to any pane in this window is
@@ -64,57 +68,46 @@ impl Pane {
             return;
         }
 
-        let text_lossy = String::from_utf8_lossy(&raw);
-        let mut lines: Vec<String> = text_lossy.lines().map(|s| s.to_string()).collect();
-        while lines.last().is_some_and(|l| line_is_blank(l.as_bytes())) {
-            lines.pop();
-        }
-        self.preview_lines = lines;
+        let line_count = content_lines(&raw).len();
+        self.preview_lines = content_lines(&raw)
+            .iter()
+            .map(|l| String::from_utf8_lossy(&visible_bytes(l)).into_owned())
+            .collect();
+        debug_assert_eq!(self.preview_lines.len(), line_count);
         self.preview_raw = raw;
     }
 
+    /// The whole preview, parsed. Prefer the windowed accessors on render paths.
     pub fn preview_text(&self) -> Text<'static> {
-        self.preview_text_tail(usize::MAX)
+        self.preview_window(0, usize::MAX)
     }
 
-    /// The preview as plain text, with terminal escape sequences removed.
-    /// Suitable for the clipboard, where SGR codes would be pasted verbatim.
-    pub fn plain_preview(&self) -> String {
-        self.preview_lines
-            .iter()
-            .map(|l| String::from_utf8_lossy(&visible_bytes(l.as_bytes())).into_owned())
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-
-    /// The parsed preview, limited to the last `max_lines` non-blank lines.
-    ///
-    /// Callers render the tail of the buffer and scroll everything above it out
-    /// of view, so parsing the whole thing is wasted work — and Inspect mode
-    /// keeps 2000 lines, which would be re-parsed on every frame. tmux
-    /// `capture-pane -e` re-emits SGR state at the start of every line, so
-    /// cutting on a line boundary keeps colours intact.
+    /// The last `max_lines` lines, parsed. For preview cards, which show the
+    /// bottom of the buffer.
     pub fn preview_text_tail(&self, max_lines: usize) -> Text<'static> {
-        if self.preview_raw.is_empty() {
-            if self.preview_lines.is_empty() {
-                return Text::raw("No output captured");
-            }
-            return Text::from(self.preview_lines.join("\n"));
+        let skip = self.preview_lines.len().saturating_sub(max_lines);
+        self.preview_window(skip, max_lines)
+    }
+
+    /// Lines `skip..skip + take` of the preview, parsed with their colours.
+    ///
+    /// Only the visible viewport is ever on screen, so parsing the whole buffer
+    /// is wasted work — Inspect mode keeps 2000 lines, which would otherwise be
+    /// re-parsed on every frame. tmux `capture-pane -e` re-emits SGR state at
+    /// the start of every line, so cutting on a line boundary keeps colours
+    /// intact. Line indices match [`Pane::preview_lines`].
+    pub fn preview_window(&self, skip: usize, take: usize) -> Text<'static> {
+        let lines = content_lines(&self.preview_raw);
+        let window: Vec<&[u8]> = lines.into_iter().skip(skip).take(take).collect();
+        if window.is_empty() {
+            return Text::raw("No output captured");
         }
 
-        let tail = tail_lines(&self.preview_raw, max_lines);
-        let mut text = tail
+        let joined = window.join(&b'\n');
+        let text = joined
+            .as_slice()
             .into_text()
-            .unwrap_or_else(|_| Text::from(String::from_utf8_lossy(tail).to_string()));
-
-        // Trim trailing empty lines so the widget displays the most recent output at the bottom
-        while let Some(last) = text.lines.last() {
-            if last.spans.iter().all(|s| s.content.trim().is_empty()) {
-                text.lines.pop();
-            } else {
-                break;
-            }
-        }
+            .unwrap_or_else(|_| Text::from(String::from_utf8_lossy(&joined).to_string()));
 
         if text.lines.is_empty() {
             Text::raw("No output captured")
@@ -122,6 +115,20 @@ impl Pane {
             text
         }
     }
+}
+
+/// The lines of `raw` that carry content: split on newlines, with trailing
+/// blank lines dropped. Blank means "nothing but whitespace once escape
+/// sequences are removed", so a line of bare SGR codes does not count.
+///
+/// This is the single definition of "a preview line": `preview_lines` and every
+/// rendered window are built from it, so indices agree across them.
+fn content_lines(raw: &[u8]) -> Vec<&[u8]> {
+    let mut lines: Vec<&[u8]> = raw.split(|b| *b == b'\n').collect();
+    while lines.last().is_some_and(|l| line_is_blank(l)) {
+        lines.pop();
+    }
+    lines
 }
 
 /// True when a line renders as blank: nothing but whitespace once terminal
@@ -168,39 +175,6 @@ fn visible_bytes(line: &[u8]) -> Vec<u8> {
         }
     }
     out
-}
-
-/// `raw` with trailing blank lines dropped, then limited to its last
-/// `max_lines` lines. Returns a slice of `raw`, so no copying happens.
-fn tail_lines(raw: &[u8], max_lines: usize) -> &[u8] {
-    let mut starts = vec![0usize];
-    for (i, b) in raw.iter().enumerate() {
-        if *b == b'\n' {
-            starts.push(i + 1);
-        }
-    }
-
-    // Line `i` spans starts[i]..(starts[i + 1] - 1), the last one runs to the end.
-    let line = |i: usize| -> &[u8] {
-        let start = starts[i];
-        let end = starts.get(i + 1).map_or(raw.len(), |n| n.saturating_sub(1));
-        &raw[start..end.max(start)]
-    };
-
-    let mut end = starts.len();
-    while end > 0 && line_is_blank(line(end - 1)) {
-        end -= 1;
-    }
-    if end == 0 {
-        return &[];
-    }
-
-    let start = end.saturating_sub(max_lines);
-    let from = starts[start];
-    let to = starts
-        .get(end)
-        .map_or(raw.len(), |next| next.saturating_sub(1));
-    &raw[from..to.max(from)]
 }
 
 /// How long a resolved branch is reused before the working tree is walked again.
@@ -415,6 +389,11 @@ mod tests {
         assert_eq!(tail.lines.len(), 5);
         let styled = tail.lines[0].spans.iter().any(|s| s.style.fg.is_some());
         assert!(styled, "colour was lost when slicing the buffer");
+
+        // Mid-buffer windows keep colour too (Inspect mode scrolls into them).
+        let mid = pane.preview_window(20, 4);
+        assert_eq!(mid.lines.len(), 4);
+        assert!(mid.lines[0].spans.iter().any(|s| s.style.fg.is_some()));
     }
 
     #[test]
@@ -431,15 +410,45 @@ mod tests {
     }
 
     #[test]
-    fn test_plain_preview_strips_escape_sequences() {
+    fn test_preview_lines_are_plain_text() {
         let mut pane = test_pane();
         pane.set_preview(b"\x1b[32mok\x1b[0m done\n\x1b]0;title\x07plain\n".to_vec());
-        let copied = pane.plain_preview();
-        assert_eq!(copied, "ok done\nplain");
+        assert_eq!(pane.preview_lines, vec!["ok done", "plain"]);
+        // Search and clipboard both read preview_lines, so neither can see SGR.
+        assert!(!pane.preview_lines.iter().any(|l| l.contains('\x1b')));
+    }
+
+    #[test]
+    fn test_search_matches_text_split_by_escape_sequences() {
+        let mut pane = test_pane();
+        // tmux colours a substring, splitting the word with SGR codes.
+        pane.set_preview(b"error: \x1b[1;31mconnection\x1b[0m refused\n".to_vec());
         assert!(
-            !copied.contains('\x1b'),
-            "escape codes reached the clipboard"
+            pane.preview_lines[0].contains("connection refused"),
+            "escape sequences broke the match: {:?}",
+            pane.preview_lines[0]
         );
+    }
+
+    #[test]
+    fn test_line_indices_agree_between_plain_and_rendered() {
+        let mut pane = test_pane();
+        let raw: String = (0..40)
+            .map(|i| format!("\x1b[3{}mline {i}\x1b[0m\n", i % 8))
+            .collect();
+        pane.set_preview(raw.into_bytes());
+        assert_eq!(pane.preview_lines.len(), 40);
+
+        // A window starting at index 7 must render the line search reports at 7.
+        let win = pane.preview_window(7, 3);
+        assert_eq!(win.lines.len(), 3);
+        let first: String = win.lines[0]
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert_eq!(first, pane.preview_lines[7]);
+        assert_eq!(first, "line 7");
     }
 
     #[test]

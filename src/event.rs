@@ -5,16 +5,19 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum AppEvent {
     Key(KeyEvent),
     Mouse(MouseEvent),
     Resize(u16, u16),
     Tick,
+    /// A fresh tmux tree from the background poller.
+    Data(Vec<crate::domain::Session>),
 }
 
 pub struct EventHandler {
     rx: mpsc::Receiver<AppEvent>,
+    tx: mpsc::Sender<AppEvent>,
     running: Arc<AtomicBool>,
 }
 
@@ -23,6 +26,7 @@ impl EventHandler {
         let (tx, rx) = mpsc::channel();
         let running = Arc::new(AtomicBool::new(true));
 
+        let tx_handle = tx.clone();
         let tx_events = tx.clone();
         let running_events = running.clone();
 
@@ -58,7 +62,17 @@ impl EventHandler {
             }
         });
 
-        Self { rx, running }
+        Self {
+            rx,
+            tx: tx_handle,
+            running,
+        }
+    }
+
+    /// A sender for this handler's queue, so other producers (the tmux poller)
+    /// can push events the main loop already drains.
+    pub fn sender(&self) -> mpsc::Sender<AppEvent> {
+        self.tx.clone()
     }
 
     pub fn next(&self) -> Result<AppEvent, mpsc::RecvError> {

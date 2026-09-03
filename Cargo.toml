@@ -27,7 +27,10 @@ directories = "6.0"
 
 # Error Handling & Utilities
 anyhow = "1.0"
-arboard = "3.6"
+# default-features are off: `image-data` pulls the whole `image` crate (and
+# x11 image plumbing on Linux) to support copying bitmaps, and lazytmux only
+# ever calls set_text.
+arboard = { version = "3.6", default-features = false }
 
 [profile.release]
 # "z" over 3: this is a UI-bound tool that spends its time waiting on tmux and

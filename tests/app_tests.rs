@@ -1281,3 +1281,89 @@ fn test_live_batched_capture_matches_individual() {
         );
     }
 }
+
+/// With a poller attached, `update` must not run tmux queries inline: the whole
+/// point is that a slow or wedged server costs staleness, not a frozen UI.
+#[test]
+fn test_poller_takes_over_refreshing() {
+    use lazytmux::event::AppEvent;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let mut app = make_app();
+    let (tx, rx) = mpsc::channel::<AppEvent>();
+    // A poller that never answers, standing in for a wedged tmux server.
+    app.attach_poller(lazytmux::tmux::poller::spawn(Duration::from_secs(3600), tx));
+
+    let before = app.sessions.len();
+
+    // None of these may block or mutate the tree; the poller owns that now.
+    let start = std::time::Instant::now();
+    app.update(Action::Tick).unwrap();
+    app.update(Action::NavigateDown).unwrap();
+    app.update(Action::Refresh).unwrap();
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < Duration::from_millis(50),
+        "update blocked for {elapsed:?} with a poller attached"
+    );
+    assert_eq!(app.sessions.len(), before);
+
+    // A tree published by the poller is adopted, favourites re-applied.
+    let name = app.sessions[0].name.clone();
+    app.favorites.toggle(&name);
+    let mut fresh = app.sessions.clone();
+    fresh.truncate(1);
+    fresh[0].is_favorite = false;
+    app.apply_tree(fresh);
+
+    assert_eq!(app.sessions.len(), 1);
+    assert!(
+        app.sessions[0].is_favorite,
+        "apply_tree dropped the favourite"
+    );
+    assert!(
+        app.selection.session_idx < app.sessions.len(),
+        "selection clamped"
+    );
+    drop(rx);
+}
+
+/// The poller only captures the window that was visible when its pass started.
+/// If the selection moved meanwhile, previews already on screen must survive
+/// rather than blanking until the next pass.
+#[test]
+fn test_apply_tree_keeps_previews_the_poller_did_not_capture() {
+    let mut app = make_app();
+    {
+        let pane = &mut app.sessions[0].windows[0].panes[0];
+        pane.set_preview(b"existing output\n".to_vec());
+    }
+    let pane_id = app.sessions[0].windows[0].panes[0].id.clone();
+
+    // A tree with no previews at all, as fetch_full_tree returns it.
+    let mut bare = app.sessions.clone();
+    for s in bare.iter_mut() {
+        for w in s.windows.iter_mut() {
+            for p in w.panes.iter_mut() {
+                p.preview_raw.clear();
+                p.preview_lines.clear();
+            }
+        }
+    }
+    app.apply_tree(bare);
+
+    let carried = app
+        .sessions
+        .iter()
+        .flat_map(|s| s.windows.iter())
+        .flat_map(|w| w.panes.iter())
+        .find(|p| p.id == pane_id)
+        .expect("pane still present");
+    assert_eq!(
+        carried.preview_lines,
+        vec!["existing output"],
+        "preview was blanked between poller passes"
+    );
+}

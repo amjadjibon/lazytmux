@@ -70,33 +70,27 @@ pub fn execute_handoff(
                 crossterm::cursor::Show
             )?;
 
-            // On Unix platforms, exec directly into tmux attach
-            #[cfg(unix)]
-            {
-                use std::os::unix::process::CommandExt;
-                let _ = Command::new("tmux")
-                    .args([
-                        "attach-session",
-                        "-t",
-                        session_name,
-                        ";",
-                        "select-window",
-                        "-t",
-                        &window_id.0,
-                        ";",
-                        "select-pane",
-                        "-t",
-                        &pane_id.0,
-                    ])
-                    .exec();
-            }
-
-            #[cfg(not(unix))]
-            {
-                let _ = Command::new("tmux")
-                    .args(["attach-session", "-t", session_name])
-                    .status();
-            }
+            // Replace this process with tmux so the user lands in their
+            // session directly. lazytmux is a Unix-only tool (every release
+            // target is Linux or macOS), so this is not behind a cfg: on any
+            // other platform the crate should fail to build, not silently do
+            // something different.
+            use std::os::unix::process::CommandExt;
+            let _ = Command::new("tmux")
+                .args([
+                    "attach-session",
+                    "-t",
+                    session_name,
+                    ";",
+                    "select-window",
+                    "-t",
+                    &window_id.0,
+                    ";",
+                    "select-pane",
+                    "-t",
+                    &pane_id.0,
+                ])
+                .exec();
 
             std::process::exit(0);
         }

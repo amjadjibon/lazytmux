@@ -103,6 +103,16 @@ fn main() -> anyhow::Result<()> {
     let mut app = App::new(client, config.clone(), is_mock);
     let event_handler = EventHandler::new(config.refresh_interval_ms);
 
+    // Real tmux queries run on their own thread so a slow or wedged server
+    // costs staleness rather than a frozen UI. The mock client is in-memory,
+    // so mock mode keeps refreshing inline.
+    if !is_mock {
+        app.attach_poller(lazytmux::tmux::poller::spawn(
+            std::time::Duration::from_millis(config.refresh_interval_ms),
+            event_handler.sender(),
+        ));
+    }
+
     // Main event loop
     while !app.should_quit {
         terminal.draw(|frame| {
@@ -110,7 +120,12 @@ fn main() -> anyhow::Result<()> {
             ui::render(&app, frame);
         })?;
 
-        if let Ok(event) = event_handler.next() {
+        // A disconnected channel means both producer threads are gone: without
+        // this the loop would spin on terminal.draw() at 100% CPU forever.
+        let Ok(event) = event_handler.next() else {
+            break;
+        };
+        {
             match event {
                 AppEvent::Key(key) => {
                     if let Some(action) = app.handle_key_event(key) {
@@ -131,6 +146,9 @@ fn main() -> anyhow::Result<()> {
                 }
                 AppEvent::Tick => {
                     let _ = app.update(Action::Tick);
+                }
+                AppEvent::Data(tree) => {
+                    app.apply_tree(tree);
                 }
                 AppEvent::Resize(_, _) => {}
             }

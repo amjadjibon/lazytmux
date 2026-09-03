@@ -218,6 +218,10 @@ pub struct App {
     pub last_click: Option<(Instant, u16, u16)>,
     pub favorites: crate::favorites::Favorites,
     last_throttled_refresh: Option<Instant>,
+    /// Background tmux poller. Absent in mock mode and in tests, where refreshes
+    /// run inline so behaviour stays deterministic.
+    poller: Option<crate::tmux::PollerHandle>,
+    last_context: Option<crate::tmux::PreviewContext>,
 }
 
 impl App {
@@ -256,9 +260,99 @@ impl App {
             last_click: None,
             favorites,
             last_throttled_refresh: None,
+            poller: None,
+            last_context: None,
         };
         let _ = app.refresh_data();
         app
+    }
+
+    /// Route tmux polling through a background thread. Without this every
+    /// refresh runs inline on the UI thread, which is what tests and mock mode
+    /// want but blocks input in a real session.
+    pub fn attach_poller(&mut self, poller: crate::tmux::PollerHandle) {
+        self.poller = Some(poller);
+        self.publish_context();
+    }
+
+    /// Tell the poller which panes are on screen, and refresh now. Sending only
+    /// on change keeps a held-down navigation key from queueing a poll per
+    /// keystroke.
+    fn publish_context(&mut self) {
+        let Some(poller) = &self.poller else {
+            return;
+        };
+        let context = crate::tmux::PreviewContext {
+            panes: self
+                .selected_window()
+                .map(|w| w.panes.iter().map(|p| p.id.clone()).collect())
+                .unwrap_or_default(),
+            inspected: self.inspected_pane(),
+            preview_lines: self.config.pane_preview_lines,
+            inspect_lines: INSPECT_SCROLLBACK_LINES,
+        };
+        if self.last_context.as_ref() != Some(&context) {
+            poller.set_context(context.clone());
+            self.last_context = Some(context);
+        }
+    }
+
+    /// Ask for fresh tmux state. With a poller attached this only wakes it;
+    /// otherwise it fetches inline.
+    fn request_refresh(&mut self) {
+        match &self.poller {
+            Some(poller) => {
+                poller.refresh_now();
+                self.publish_context();
+            }
+            None => {
+                let _ = self.refresh_data();
+            }
+        }
+    }
+
+    /// Refresh the previews of the visible window.
+    fn request_preview_refresh(&mut self) {
+        match &self.poller {
+            Some(_) => self.publish_context(),
+            None => self.refresh_active_window_preview(),
+        }
+    }
+
+    /// Adopt a tree published by the poller.
+    pub fn apply_tree(&mut self, mut tree: Vec<Session>) {
+        for session in tree.iter_mut() {
+            session.is_favorite = self.favorites.contains(&session.name);
+        }
+
+        // The poller captures only the window that was visible when it started
+        // its pass. If the selection moved since, carry the previews we already
+        // have rather than blanking those panes until the next pass.
+        for session in tree.iter_mut() {
+            for window in session.windows.iter_mut() {
+                for pane in window.panes.iter_mut() {
+                    if pane.preview_raw.is_empty()
+                        && let Some(previous) = self.find_pane(&pane.id)
+                        && !previous.preview_raw.is_empty()
+                    {
+                        pane.set_preview(previous.preview_raw.clone());
+                    }
+                }
+            }
+        }
+
+        self.sessions = tree;
+        self.clamp_selections();
+        self.clamp_inspect_scroll();
+        self.publish_context();
+    }
+
+    fn find_pane(&self, id: &PaneId) -> Option<&Pane> {
+        self.sessions
+            .iter()
+            .flat_map(|s| s.windows.iter())
+            .flat_map(|w| w.panes.iter())
+            .find(|p| &p.id == id)
     }
 
     /// The pane currently open in Inspect mode, if any.
@@ -342,7 +436,7 @@ impl App {
             .is_none_or(|t| t.elapsed() >= DRAG_REFRESH_INTERVAL);
         if due {
             self.last_throttled_refresh = Some(Instant::now());
-            let _ = self.refresh_data();
+            self.request_refresh();
         }
     }
 
@@ -925,7 +1019,9 @@ impl App {
 
             Action::Tick => {
                 self.toasts.retain(|t| t.created_at.elapsed() < t.ttl);
-                self.refresh_active_window_preview();
+                if self.poller.is_none() {
+                    self.refresh_active_window_preview();
+                }
             }
 
             Action::Refresh => {
@@ -971,7 +1067,7 @@ impl App {
                         }
                     }
                 }
-                self.refresh_active_window_preview();
+                self.request_preview_refresh();
             }
 
             Action::NavigateUp => {
@@ -997,7 +1093,7 @@ impl App {
                         }
                     }
                 }
-                self.refresh_active_window_preview();
+                self.request_preview_refresh();
             }
 
             Action::NavigateLeft => match self.sidebar_mode {
@@ -1155,6 +1251,8 @@ impl App {
                         search_query: None,
                         is_searching: false,
                     };
+                    // The inspected pane needs the deep buffer from now on.
+                    self.publish_context();
                 }
             }
 
@@ -1406,9 +1504,7 @@ impl App {
 
             Action::CopyPaneOutput => {
                 if let Some(pane) = self.selected_pane() {
-                    // preview_lines come from `capture-pane -e`, so they carry
-                    // SGR sequences that must not end up on the clipboard.
-                    let text = pane.plain_preview();
+                    let text = pane.preview_lines.join("\n");
                     match arboard::Clipboard::new() {
                         Ok(mut clipboard) => {
                             if clipboard.set_text(text).is_ok() {
@@ -1475,7 +1571,7 @@ impl App {
                         self.show_toast(format!("Failed to set layout: {e}"), ToastLevel::Error);
                     } else {
                         self.show_toast(format!("Layout: {preset_name}"), ToastLevel::Success);
-                        let _ = self.refresh_data();
+                        self.request_refresh();
                     }
                 }
             }
@@ -1509,7 +1605,7 @@ impl App {
                         if self.selection.pane_idx > 0 {
                             self.selection.pane_idx -= 1;
                         }
-                        let _ = self.refresh_data();
+                        self.request_refresh();
                     }
                 }
             }
@@ -1526,7 +1622,7 @@ impl App {
                         {
                             self.selection.pane_idx += 1;
                         }
-                        let _ = self.refresh_data();
+                        self.request_refresh();
                     }
                 }
             }
@@ -1541,7 +1637,7 @@ impl App {
                         if self.selection.window_idx > 0 {
                             self.selection.window_idx -= 1;
                         }
-                        let _ = self.refresh_data();
+                        self.request_refresh();
                     }
                 }
             }
@@ -1558,7 +1654,7 @@ impl App {
                         {
                             self.selection.window_idx += 1;
                         }
-                        let _ = self.refresh_data();
+                        self.request_refresh();
                     }
                 }
             }
@@ -1579,7 +1675,7 @@ impl App {
                             format!("Resized pane {} {dir_name} ({amount})", p_id.0),
                             ToastLevel::Success,
                         );
-                        let _ = self.refresh_data();
+                        self.request_refresh();
                     }
                 }
             }
@@ -1838,6 +1934,8 @@ impl App {
                                 format!("Created {split_type} split pane {new_id}"),
                                 ToastLevel::Success,
                             );
+                            // Selecting the new pane needs the tree now, not on
+                            // the poller's next pass.
                             let _ = self.refresh_data();
                             if let Some(w) = self.selected_window()
                                 && let Some(pos) = w.panes.iter().position(|p| p.id == new_id)
@@ -2180,7 +2278,7 @@ impl App {
                 self.mouse_drag_col_border = None;
                 // Throttling may have skipped the final drag position.
                 if was_dragging {
-                    let _ = self.refresh_data();
+                    self.request_refresh();
                 }
             }
 
@@ -2224,7 +2322,7 @@ impl App {
                             format!("Broke pane {} into new window", pane_id.0),
                             ToastLevel::Success,
                         );
-                        let _ = self.refresh_data();
+                        self.request_refresh();
                     }
                 }
             }
@@ -2271,7 +2369,7 @@ impl App {
                                     format!("Created session '{name}'"),
                                     ToastLevel::Success,
                                 );
-                                let _ = self.refresh_data();
+                                self.request_refresh();
                             }
                         } else {
                             self.show_toast(
@@ -2294,7 +2392,7 @@ impl App {
                                     format!("Created window '{name}'"),
                                     ToastLevel::Success,
                                 );
-                                let _ = self.refresh_data();
+                                self.request_refresh();
                             }
                         } else {
                             self.show_toast(
@@ -2320,7 +2418,7 @@ impl App {
                                     format!("Renamed session to '{name}'"),
                                     ToastLevel::Success,
                                 );
-                                let _ = self.refresh_data();
+                                self.request_refresh();
                             }
                         } else {
                             self.show_toast(
@@ -2342,7 +2440,7 @@ impl App {
                                     format!("Renamed window to '{name}'"),
                                     ToastLevel::Success,
                                 );
-                                let _ = self.refresh_data();
+                                self.request_refresh();
                             }
                         } else {
                             self.show_toast("Invalid window name".to_string(), ToastLevel::Warning);
@@ -2366,13 +2464,13 @@ impl App {
                                 format!("Broadcast to ALL panes (sync on): {what}"),
                                 ToastLevel::Warning,
                             );
-                            self.refresh_active_window_preview();
+                            self.request_preview_refresh();
                         } else {
                             self.show_toast(
                                 format!("Sent to {}: {what}", pane_id.0),
                                 ToastLevel::Success,
                             );
-                            self.refresh_active_window_preview();
+                            self.request_preview_refresh();
                         }
                     }
                     _ => {}
@@ -2437,7 +2535,7 @@ impl App {
                 // A killed session keeps its star: favorites are keyed by name,
                 // so recreating the session restores it.
                 self.show_toast(ok_message, ToastLevel::Success);
-                let _ = self.refresh_data();
+                self.request_refresh();
             }
         }
         Ok(None)
