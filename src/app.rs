@@ -2106,6 +2106,7 @@ impl App {
                                 control,
                                 FocusColumn::Sessions,
                                 Action::PromptNewSession,
+                                Action::PromptRenameSession,
                                 collapse_to,
                             );
                         }
@@ -2151,6 +2152,7 @@ impl App {
                                 control,
                                 FocusColumn::Windows,
                                 Action::PromptNewWindow,
+                                Action::PromptRenameWindow,
                                 collapse_to,
                             );
                         }
@@ -2596,6 +2598,7 @@ impl App {
         control: crate::ui::HeaderControl,
         column: FocusColumn,
         new: Action,
+        rename: Action,
         collapse_to: crate::ui::SidebarMode,
     ) -> Result<Option<Action>> {
         use crate::ui::HeaderControl;
@@ -2607,6 +2610,10 @@ impl App {
             HeaderControl::New => {
                 self.focus = column;
                 self.update(new)
+            }
+            HeaderControl::Rename => {
+                self.focus = column;
+                self.update(rename)
             }
             HeaderControl::Kill => {
                 self.focus = column;

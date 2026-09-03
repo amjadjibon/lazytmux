@@ -86,7 +86,7 @@ bind-key C-s display-popup -E -w 80% -h 80% "lazytmux"
 | `Enter` | Attach to session / Focus window / Handoff to pane |
 | Mouse Double Click | **Attach to session / Focus window / Handoff to pane (Same as Enter)** |
 | Mouse on dialogs | **Click `Submit` / `Cancel`, `Yes` / `No`, or a split choice; clicking outside a dialog cancels it** |
-| Header `[+]` / `[x]` | **Create or kill a session (Sessions column) or window (Windows column)** |
+| Header `[+]` / `[r]` / `[x]` | **Create, rename, or kill a session (Sessions column) or window (Windows column)** |
 | `/` | Open interactive fuzzy finder (with category filter tabs) |
 | `t` / `T` | **Toggle theme preset live** (Tokyo Night, Catppuccin, Nord, Gruvbox, Dracula, etc.) |
 | `<` / `>`, `,` / `.` | **Resize focused column width** (Sessions, Windows, Panes) |

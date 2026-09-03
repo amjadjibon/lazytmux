@@ -1844,8 +1844,11 @@ fn test_header_control_hitboxes_match_what_is_drawn() {
                     .map(|x| buffer[(x, col.y)].symbol())
                     .collect();
 
-                for (label, control) in [("[+]", HeaderControl::New), ("[x]", HeaderControl::Kill)]
-                {
+                for (label, control) in [
+                    ("[+]", HeaderControl::New),
+                    ("[r]", HeaderControl::Rename),
+                    ("[x]", HeaderControl::Kill),
+                ] {
                     let byte_idx = painted.find(label).unwrap_or_else(|| {
                         panic!("{w} {mode:?}: {label} not drawn in header {painted:?}")
                     });
@@ -1872,7 +1875,7 @@ fn test_header_control_hitboxes_match_what_is_drawn() {
 
 /// [+] creates, [x] confirms before killing — for both sessions and windows.
 #[test]
-fn test_header_buttons_create_and_confirm_kill() {
+fn test_header_buttons_create_rename_and_confirm_kill() {
     use lazytmux::ui::header::{sessions_header, windows_header};
     use lazytmux::ui::{AppLayout, HeaderControl};
     use ratatui::layout::Rect;
@@ -1892,6 +1895,22 @@ fn test_header_buttons_create_and_confirm_kill() {
     })
     .unwrap();
     assert!(matches!(app.mode, Mode::PromptNewSession { .. }));
+    app.update(Action::CancelModal).unwrap();
+
+    // Sessions [r] opens the rename prompt, pre-filled with the current name.
+    let rename_col =
+        column_of_header_control(&strip, HeaderControl::Rename, layout.sessions_col.width);
+    let current = app.selected_session().unwrap().name.clone();
+    app.update(Action::MouseClick {
+        column: layout.sessions_col.x + rename_col,
+        row: layout.sessions_col.y,
+        double_click: false,
+    })
+    .unwrap();
+    match &app.mode {
+        Mode::PromptRenameSession { input, .. } => assert_eq!(*input, current),
+        other => panic!("header [r] should rename the session, got {other:?}"),
+    }
     app.update(Action::CancelModal).unwrap();
 
     // Sessions [x] confirms against the selected session, killing nothing yet.
@@ -1928,6 +1947,22 @@ fn test_header_buttons_create_and_confirm_kill() {
     })
     .unwrap();
     assert!(matches!(app.mode, Mode::PromptNewWindow { .. }));
+    app.update(Action::CancelModal).unwrap();
+
+    // Windows [r] renames the window, not the session.
+    let rename_col =
+        column_of_header_control(&strip, HeaderControl::Rename, layout.windows_col.width);
+    let current = app.selected_window().unwrap().name.clone();
+    app.update(Action::MouseClick {
+        column: layout.windows_col.x + rename_col,
+        row: layout.windows_col.y,
+        double_click: false,
+    })
+    .unwrap();
+    match &app.mode {
+        Mode::PromptRenameWindow { input, .. } => assert_eq!(*input, current),
+        other => panic!("header [r] should rename the window, got {other:?}"),
+    }
     app.update(Action::CancelModal).unwrap();
 
     let before = app.selected_session().unwrap().windows.len();

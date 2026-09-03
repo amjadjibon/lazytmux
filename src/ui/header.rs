@@ -10,6 +10,8 @@ pub enum HeaderControl {
     Collapse,
     /// Create a session (Sessions column) or a window (Windows column).
     New,
+    /// Rename the selected session or window.
+    Rename,
     /// Kill the selected session or window, with the usual confirmation.
     Kill,
 }
@@ -20,6 +22,7 @@ impl HeaderControl {
             HeaderControl::Expand => expand_text.to_string(),
             HeaderControl::Collapse => "[◀]".to_string(),
             HeaderControl::New => "[+]".to_string(),
+            HeaderControl::Rename => "[r]".to_string(),
             HeaderControl::Kill => "[x]".to_string(),
         }
     }
@@ -100,6 +103,7 @@ fn strip(name: &str, expand: Option<&str>, width: u16) -> HeaderStrip {
         }
         for control in [
             HeaderControl::New,
+            HeaderControl::Rename,
             HeaderControl::Kill,
             HeaderControl::Collapse,
         ] {
