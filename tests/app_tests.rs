@@ -492,7 +492,7 @@ fn test_send_keys_to_pane() {
     app.update(Action::PromptSendCommand).unwrap();
     assert!(matches!(app.mode, Mode::PromptSendCommand { .. }));
 
-    // 1. Input "echo hello" and submit with Enter (Enter = normal send!)
+    // 1. Input command and submit with Enter
     for c in "echo hello".chars() {
         app.update(Action::ModalInput(c)).unwrap();
     }
@@ -500,49 +500,11 @@ fn test_send_keys_to_pane() {
     assert_eq!(app.mode, Mode::Normal);
     assert!(app.toasts.last().unwrap().message.contains("echo hello"));
 
-    // 2. Submit with Ctrl+Enter / ModalSubmitWithEnter (with Enter for Claude / Codex / AGY!)
+    // 2. Submit empty input with Enter (sends pure Enter keypress to pane)
     app.update(Action::PromptSendCommand).unwrap();
-    for c in "claude code prompt".chars() {
-        app.update(Action::ModalInput(c)).unwrap();
-    }
-    app.update(Action::ModalSubmitWithEnter).unwrap();
-    assert_eq!(app.mode, Mode::Normal);
-    assert!(
-        app.toasts
-            .last()
-            .unwrap()
-            .message
-            .contains("claude code prompt")
-    );
-    assert!(app.toasts.last().unwrap().message.contains("+ ↵"));
-
-    // 3. Submit empty with Ctrl+Enter (sends pure Enter keypress!)
-    app.update(Action::PromptSendCommand).unwrap();
-    app.update(Action::ModalSubmitWithEnter).unwrap();
-    assert_eq!(app.mode, Mode::Normal);
-    assert!(app.toasts.last().unwrap().message.contains("<Enter>"));
-
-    // 4. Test Tab to toggle mode to With Enter and submit with plain Enter
-    app.update(Action::PromptSendCommand).unwrap();
-    if let Mode::PromptSendCommand { with_enter, .. } = app.mode {
-        assert!(!with_enter);
-    }
-    app.update(Action::TogglePromptWithEnter).unwrap();
-    if let Mode::PromptSendCommand { with_enter, .. } = app.mode {
-        assert!(with_enter);
-    }
-    for c in "tab toggled".chars() {
-        app.update(Action::ModalInput(c)).unwrap();
-    }
     app.update(Action::ModalSubmit).unwrap();
     assert_eq!(app.mode, Mode::Normal);
-    assert!(
-        app.toasts
-            .last()
-            .unwrap()
-            .message
-            .contains("tab toggled + ↵")
-    );
+    assert!(app.toasts.last().unwrap().message.contains("<Enter>"));
 }
 
 #[test]

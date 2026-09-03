@@ -54,8 +54,6 @@ pub enum Action {
     ModalInput(char),
     ModalBackspace,
     ModalSubmit,
-    ModalSubmitWithEnter,
-    TogglePromptWithEnter,
 
     // Layout, Sync, & Pane actions
     NextLayout,

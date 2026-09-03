@@ -211,13 +211,6 @@ impl TmuxClient for CliTmuxClient {
     }
 
     fn send_keys(&mut self, pane: &PaneId, keys: &str) -> Result<()> {
-        // Normal send: standard tmux send-keys with C-m
-        self.run_cmd(&["send-keys", "-t", &pane.0, keys, "C-m"])?;
-        Ok(())
-    }
-
-    fn send_keys_with_enter(&mut self, pane: &PaneId, keys: &str) -> Result<()> {
-        // With Enter: send literal text safely (-l --), then send explicit Enter keypress to submit prompt text fields (Claude Code, Codex, AGY)
         if !keys.is_empty() {
             self.run_cmd(&["send-keys", "-t", &pane.0, "-l", "--", keys])?;
         }

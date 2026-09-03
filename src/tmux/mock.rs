@@ -809,23 +809,10 @@ impl TmuxClient for MockTmuxClient {
         for s in &mut self.sessions {
             for w in &mut s.windows {
                 if let Some(p) = w.panes.iter_mut().find(|p| &p.id == pane) {
-                    p.preview_lines.push(format!("$ {keys}"));
-                    p.preview_lines.push("Execution complete.".to_string());
-                    return Ok(());
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn send_keys_with_enter(&mut self, pane: &PaneId, keys: &str) -> Result<()> {
-        for s in &mut self.sessions {
-            for w in &mut s.windows {
-                if let Some(p) = w.panes.iter_mut().find(|p| &p.id == pane) {
                     if keys.is_empty() {
                         p.preview_lines.push("<Enter>".to_string());
                     } else {
-                        p.preview_lines.push(format!("$ {keys} + <Enter>"));
+                        p.preview_lines.push(format!("$ {keys}"));
                         p.preview_lines.push("Execution complete.".to_string());
                     }
                     return Ok(());

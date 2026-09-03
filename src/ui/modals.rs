@@ -42,11 +42,14 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
             area,
             theme,
         ),
-        Mode::PromptSendCommand {
-            pane_id,
+        Mode::PromptSendCommand { pane_id, input } => render_input_prompt(
+            &format!("Send to Pane {}", pane_id.0),
+            "Command / prompt (Enter executes in pane):",
             input,
-            with_enter,
-        } => render_send_command_prompt(pane_id, input, *with_enter, frame, area, theme),
+            frame,
+            area,
+            theme,
+        ),
         Mode::Help => render_help(frame, area, theme),
         _ => {}
     }
@@ -274,136 +277,6 @@ fn render_input_prompt(
 
     let hint_widget = Paragraph::new(hint_line).style(Style::default().fg(Color::DarkGray));
     frame.render_widget(hint_widget, chunks[2]);
-}
-
-pub fn render_send_command_prompt(
-    pane_id: &crate::domain::PaneId,
-    input: &str,
-    with_enter: bool,
-    frame: &mut Frame,
-    area: Rect,
-    _theme: &Theme,
-) {
-    let overlay_area = centered_rect(58, 26, area);
-    frame.render_widget(Clear, overlay_area);
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )
-        .title(format!(" Send Prompt / Command to Pane {} ", pane_id.0))
-        .title_style(
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        );
-
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(1)
-        .constraints([
-            Constraint::Length(1), // Prompt label
-            Constraint::Length(3), // Input box
-            Constraint::Length(1), // Mode toggle indicator
-            Constraint::Length(1), // Action hints
-        ])
-        .split(block.inner(overlay_area));
-
-    frame.render_widget(block, overlay_area);
-
-    let prompt_label =
-        Paragraph::new("Enter command or prompt for interactive text fields (Claude/Codex/AGY):")
-            .style(Style::default().fg(Color::Gray));
-    frame.render_widget(prompt_label, chunks[0]);
-
-    let input_box = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::White));
-
-    let input_line = Line::from(vec![
-        Span::styled(
-            input,
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("█", Style::default().fg(Color::Cyan)),
-    ]);
-    frame.render_widget(Paragraph::new(input_line).block(input_box), chunks[1]);
-
-    // Mode Toggle line
-    let mode_spans = if with_enter {
-        vec![
-            Span::raw("Mode: "),
-            Span::styled(
-                " [● With Enter ↵] ",
-                Style::default()
-                    .bg(Color::Cyan)
-                    .fg(Color::Black)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw("  "),
-            Span::styled(" [○ Normal] ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                "   (Press Tab to switch to Normal)",
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]
-    } else {
-        vec![
-            Span::raw("Mode: "),
-            Span::styled(" [○ With Enter ↵] ", Style::default().fg(Color::DarkGray)),
-            Span::raw("  "),
-            Span::styled(
-                " [● Normal] ",
-                Style::default()
-                    .bg(Color::Cyan)
-                    .fg(Color::Black)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                "   (Press Tab to switch to With Enter ↵)",
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]
-    };
-    frame.render_widget(Paragraph::new(Line::from(mode_spans)), chunks[2]);
-
-    // Keyboard hints
-    let hint_line = Line::from(vec![
-        Span::styled(
-            " Enter ",
-            Style::default()
-                .bg(Color::Cyan)
-                .fg(Color::Black)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(" Send   "),
-        Span::styled(
-            " Tab ",
-            Style::default().bg(Color::DarkGray).fg(Color::White),
-        ),
-        Span::raw(" Toggle Mode   "),
-        Span::styled(
-            " Ctrl+E ",
-            Style::default()
-                .bg(Color::Yellow)
-                .fg(Color::Black)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(" Send with ↵   "),
-        Span::styled(
-            " Esc ",
-            Style::default().bg(Color::DarkGray).fg(Color::White),
-        ),
-        Span::raw(" Cancel"),
-    ]);
-    frame.render_widget(Paragraph::new(hint_line), chunks[3]);
 }
 
 fn render_help(frame: &mut Frame, area: Rect, theme: &Theme) {
