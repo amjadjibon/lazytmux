@@ -127,6 +127,8 @@ pub enum PaneControl {
     SplitStacked,
     /// Split into side-by-side panes.
     SplitSideBySide,
+    /// Wipe the pane's screen and scrollback, leaving the process running.
+    Clear,
     Kill,
 }
 
@@ -142,6 +144,7 @@ impl PaneControl {
             // stacked split, left half for a side-by-side one.
             PaneControl::SplitStacked => "[⬓]",
             PaneControl::SplitSideBySide => "[◧]",
+            PaneControl::Clear => "[c]",
             PaneControl::Kill => "[x]",
         }
     }
@@ -156,6 +159,9 @@ impl PaneControl {
             PaneControl::Swap => Action::SwapPaneDown,
             PaneControl::SplitStacked => Action::SplitPane { vertical: false },
             PaneControl::SplitSideBySide => Action::SplitPane { vertical: true },
+            // Unlike the `c` key, the button asks first: a misclick must not
+            // silently discard scrollback.
+            PaneControl::Clear => Action::PromptClearPane,
             // Goes through the normal kill path, so it obeys `confirm_on_kill`
             // and asks before destroying anything.
             PaneControl::Kill => Action::PromptKill,
@@ -171,6 +177,7 @@ const ALL_CONTROLS: &[PaneControl] = &[
     PaneControl::Swap,
     PaneControl::SplitStacked,
     PaneControl::SplitSideBySide,
+    PaneControl::Clear,
     PaneControl::Kill,
 ];
 
@@ -188,11 +195,19 @@ const ESSENTIAL_CONTROLS: &[PaneControl] = &[
 pub struct ControlStrip {
     label: String,
     hits: Vec<(u16, u16, PaneControl)>,
+    /// The column just past the last label. The card needs one more column
+    /// after it for the right border corner.
+    content_end: u16,
 }
 
 impl ControlStrip {
     pub fn label(&self) -> &str {
         &self.label
+    }
+
+    /// The narrowest card this strip fits on, corners included.
+    pub fn min_width(&self) -> u16 {
+        self.content_end + 1
     }
 
     /// The control at `col_offset` columns from the card's left edge, if any.
@@ -206,18 +221,23 @@ impl ControlStrip {
 
 /// Build the widest control strip that fits a card `width` columns across, or
 /// `None` when even the smallest set would not fit.
+///
+/// Each candidate is measured rather than compared against a hardcoded
+/// threshold, so adding or renaming a control cannot silently push the strip
+/// past a card's right border.
 pub fn control_strip(width: u16) -> Option<ControlStrip> {
-    use unicode_width::UnicodeWidthStr;
+    [
+        (ALL_CONTROLS, " "),
+        (ALL_CONTROLS, ""),
+        (ESSENTIAL_CONTROLS, ""),
+    ]
+    .into_iter()
+    .map(|(controls, separator)| build_strip(controls, separator))
+    .find(|strip| strip.min_width() <= width)
+}
 
-    let (controls, separator) = if width >= 36 {
-        (ALL_CONTROLS, " ")
-    } else if width >= 28 {
-        (ALL_CONTROLS, "")
-    } else if width >= 14 {
-        (ESSENTIAL_CONTROLS, "")
-    } else {
-        return None;
-    };
+fn build_strip(controls: &[PaneControl], separator: &str) -> ControlStrip {
+    use unicode_width::UnicodeWidthStr;
 
     // A left-aligned bottom title starts one column in, past the corner.
     let mut column: u16 = 1;
@@ -242,9 +262,16 @@ pub fn control_strip(width: u16) -> Option<ControlStrip> {
         hits.push((column, column + text_width, *control));
         column += text_width;
     }
+    let content_end = column;
+    // Decorative only: it is the first thing clipped on a card that is exactly
+    // wide enough, which is why it is not part of `content_end`.
     label.push(' ');
 
-    Some(ControlStrip { label, hits })
+    ControlStrip {
+        label,
+        hits,
+        content_end,
+    }
 }
 
 fn render_pane_card(

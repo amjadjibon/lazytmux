@@ -308,6 +308,12 @@ fn render_confirm(target: &ConfirmTarget, frame: &mut Frame, area: Rect, theme: 
             " Respawn Pane ",
             format!("Respawn pane {id}?\nThis kills \"{cmd}\" and restarts the pane's command."),
         ),
+        ConfirmTarget::ClearPane(id, cmd) => (
+            " Clear Pane ",
+            format!(
+                "Clear pane {id}?\n\"{cmd}\" keeps running, but its screen and scrollback are lost."
+            ),
+        ),
     };
 
     let block = Block::default()
@@ -582,7 +588,11 @@ fn render_help(frame: &mut Frame, area: Rect, theme: &Theme) {
             Span::raw("Zoom / inspect full-screen scrollback for selected pane"),
         ]),
         Line::from(vec![
-            Span::styled("  c                     ", Style::default().fg(Color::Cyan)),
+            Span::styled("  c                     ", Style::default().fg(Color::Yellow)),
+            Span::raw("Clear selected pane's screen and scrollback"),
+        ]),
+        Line::from(vec![
+            Span::styled("  y                     ", Style::default().fg(Color::Cyan)),
             Span::raw("Copy pane output to system clipboard"),
         ]),
         Line::raw(""),
@@ -618,7 +628,11 @@ fn render_help(frame: &mut Frame, area: Rect, theme: &Theme) {
             Span::raw("Jump to next / previous search match"),
         ]),
         Line::from(vec![
-            Span::styled("  c                     ", Style::default().fg(Color::Cyan)),
+            Span::styled("  c                     ", Style::default().fg(Color::Yellow)),
+            Span::raw("Clear pane screen and scrollback"),
+        ]),
+        Line::from(vec![
+            Span::styled("  y                     ", Style::default().fg(Color::Cyan)),
             Span::raw("Copy entire buffer to clipboard"),
         ]),
         Line::from(vec![

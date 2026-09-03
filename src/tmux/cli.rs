@@ -286,6 +286,15 @@ impl TmuxClient for CliTmuxClient {
         Ok(())
     }
 
+    fn clear_pane(&mut self, pane: &PaneId) -> Result<()> {
+        // `clear-history` on its own drops only what has scrolled off; the
+        // visible screen survives it. `send-keys -R` resets the pane's terminal
+        // state, which is what actually blanks the screen, so both are needed.
+        self.run_cmd(&["send-keys", "-t", &pane.0, "-R"])?;
+        self.run_cmd(&["clear-history", "-t", &pane.0])?;
+        Ok(())
+    }
+
     fn send_keys(&mut self, pane: &PaneId, keys: &str) -> Result<()> {
         if !keys.is_empty() {
             self.run_cmd(&["send-keys", "-t", &pane.0, "-l", "--", keys])?;

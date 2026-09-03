@@ -807,6 +807,19 @@ impl TmuxClient for MockTmuxClient {
         Ok(())
     }
 
+    fn clear_pane(&mut self, pane: &PaneId) -> Result<()> {
+        for s in &mut self.sessions {
+            for w in &mut s.windows {
+                if let Some(p) = w.panes.iter_mut().find(|p| &p.id == pane) {
+                    p.preview_lines.clear();
+                    p.preview_raw.clear();
+                    return Ok(());
+                }
+            }
+        }
+        Err(anyhow!("Pane not found"))
+    }
+
     fn send_keys(&mut self, pane: &PaneId, keys: &str) -> Result<()> {
         for s in &mut self.sessions {
             for w in &mut s.windows {

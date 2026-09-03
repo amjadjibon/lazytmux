@@ -236,3 +236,40 @@ fn test_respawn_pane() {
             .contains("Respawned pane")
     );
 }
+
+#[test]
+fn test_clear_pane_key_does_not_confirm() {
+    let mock = Box::new(MockTmuxClient::new());
+    let mut app = App::new(mock, Config::default(), true);
+    app.focus = lazytmux::app::FocusColumn::Panes;
+
+    let panes_before = app.selected_window().unwrap().panes.len();
+    assert!(!app.selected_pane().unwrap().preview_lines.is_empty());
+
+    // The keyboard path clears straight away, the way Ctrl-L does.
+    app.update(Action::ClearPane).unwrap();
+    assert_eq!(app.mode, Mode::Normal);
+    assert!(app.selected_pane().unwrap().preview_lines.is_empty());
+    assert_eq!(
+        app.selected_window().unwrap().panes.len(),
+        panes_before,
+        "clearing must not remove the pane"
+    );
+    assert!(app.toasts.last().unwrap().message.contains("Cleared pane"));
+}
+
+#[test]
+fn test_clear_pane_button_respects_confirm_setting() {
+    // `confirm_on_kill = false` means the user has opted out of confirmations,
+    // so the button should not nag either.
+    let config = Config {
+        confirm_on_kill: false,
+        ..Config::default()
+    };
+    let mut app = App::new(Box::new(MockTmuxClient::new()), config, true);
+    app.focus = lazytmux::app::FocusColumn::Panes;
+
+    app.update(Action::PromptClearPane).unwrap();
+    assert_eq!(app.mode, Mode::Normal);
+    assert!(app.selected_pane().unwrap().preview_lines.is_empty());
+}

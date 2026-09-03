@@ -23,6 +23,9 @@ pub enum ConfirmTarget {
     KillPane(PaneId, String),
     /// `respawn-pane -k`: kills whatever is running in the pane and restarts it.
     RespawnPane(PaneId, String),
+    /// Wipes the pane's screen and scrollback. The process survives; its output
+    /// does not, and tmux keeps no undo for it.
+    ClearPane(PaneId, String),
 }
 
 use crate::ui::Theme;
@@ -642,7 +645,16 @@ impl App {
                 (m, KeyCode::Char('f') | KeyCode::Char('F')) if m.is_empty() => {
                     Some(Action::ToggleFavorite)
                 }
-                (m, KeyCode::Char('c') | KeyCode::Char('C')) if m.is_empty() => {
+                // `c` clears the pane, so copying moved to `y` (vim's yank).
+                // Clearing is scoped to the Panes column like the other
+                // pane-only keys, `b` and `s`: a destructive key should not
+                // fire at a target that is not in focus.
+                (m, KeyCode::Char('c') | KeyCode::Char('C'))
+                    if m.is_empty() && self.focus == FocusColumn::Panes =>
+                {
+                    Some(Action::ClearPane)
+                }
+                (m, KeyCode::Char('y') | KeyCode::Char('Y')) if m.is_empty() => {
                     Some(Action::CopyPaneOutput)
                 }
                 (m, KeyCode::Char('x') | KeyCode::Char('X')) if m.is_empty() => {
@@ -914,6 +926,9 @@ impl App {
                             Some(Action::InspectScrollBottom)
                         }
                         (KeyModifiers::NONE, KeyCode::Char('c') | KeyCode::Char('C')) => {
+                            Some(Action::ClearPane)
+                        }
+                        (KeyModifiers::NONE, KeyCode::Char('y') | KeyCode::Char('Y')) => {
                             Some(Action::CopyPaneOutput)
                         }
                         (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::OpenSelection),
@@ -2377,6 +2392,22 @@ impl App {
                 }
             }
 
+            // Keyboard `c`: clearing is cheap to redo by hand and terminals
+            // have never asked before Ctrl-L, so this path goes straight
+            // through. The `[c]` button asks, because a stray click should not
+            // silently discard scrollback.
+            Action::ClearPane => {
+                if let Some(target) = self.clear_pane_target() {
+                    return self.apply_destructive(target);
+                }
+            }
+
+            Action::PromptClearPane => {
+                if let Some(target) = self.clear_pane_target() {
+                    return self.confirm_or_apply(target);
+                }
+            }
+
             Action::CancelModal => {
                 self.mode = Mode::Normal;
             }
@@ -2546,6 +2577,13 @@ impl App {
 
     /// Route a kill through the confirmation modal, or straight through when
     /// the user has turned `confirm_on_kill` off in their config.
+    /// The clear target for the selected pane, shared by the key and the button
+    /// so the two can never disagree about what they act on.
+    fn clear_pane_target(&self) -> Option<ConfirmTarget> {
+        self.selected_pane()
+            .map(|p| ConfirmTarget::ClearPane(p.id.clone(), p.current_command.clone()))
+    }
+
     fn confirm_or_apply(&mut self, target: ConfirmTarget) -> Result<Option<Action>> {
         if self.config.confirm_on_kill {
             self.mode = Mode::Confirm(target);
@@ -2576,6 +2614,11 @@ impl App {
                 self.client.respawn_pane(id),
                 format!("Respawned pane {id}"),
                 "Respawn pane failed",
+            ),
+            ConfirmTarget::ClearPane(id, _) => (
+                self.client.clear_pane(id),
+                format!("Cleared pane {id}"),
+                "Clear pane failed",
             ),
         };
 

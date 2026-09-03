@@ -20,7 +20,7 @@
 - 🎨 **Live Syntax-Colored Previews**: Real-time terminal output rendering with complete ANSI color translation powered by `ansi-to-tui`.
 - 📐 **Authentic 2D Layout Geometry**: Window pane previews mirror actual tmux split geometries (side-by-side vertical splits and stacked horizontal splits).
 - 🔍 **Interactive Fuzzy Finder (`/`)**: Blazing-fast search across sessions, windows, active commands, and working paths powered by `nucleo-matcher`.
-- 📜 **Fullscreen Scrollback Inspector (`Space`)**: Zoom into any pane's scrollback history (up to 2,000 lines) with Vim navigation (`Ctrl+d`/`Ctrl+u`, `g`/`G`) and one-key clipboard copy (`c`).
+- 📜 **Fullscreen Scrollback Inspector (`Space`)**: Zoom into any pane's scrollback history (up to 2,000 lines) with Vim navigation (`Ctrl+d`/`Ctrl+u`, `g`/`G`) and one-key clipboard copy (`y`).
 - ⚡ **Workspace Mutations**: Create (`n`), rename (`R`), and kill (`x`) sessions, windows, and panes directly from the TUI with safety confirmation dialogs.
 - 🖱️ **Full Mouse & Touchpad Support**: Click to focus/select columns, 2D pane hit testing, scroll wheel navigation, and double-click to attach/switch.
 - 🚀 **Smart TTY Handoff & Floating Popup Support**: Automatically detects whether running standalone, inside tmux, or inside a `display-popup`.
@@ -116,6 +116,7 @@ bind-key C-s display-popup -E -w 80% -h 80% "lazytmux"
 | `[◀] [▼] [▲] [▶]` | **Panes** | Click the selected card's border buttons to resize |
 | `[↕]` | **Panes** | Click to swap the pane down |
 | `[⬓]` / `[◧]` | **Panes** | **Click to split the pane** — `[⬓]` stacked, `[◧]` side by side |
+| `[c]` | **Panes** | **Click to clear the pane** — wipes its screen and scrollback (asks for confirmation first) |
 | `[x]` | **Panes** | **Click to close the pane** (asks for confirmation first) |
 | `[` / `]` | **Panes** | Swap pane position up / down (`swap-pane -U / -D`) |
 | `[` / `]` | **Windows** | Move window position left / right (`swap-window`) |
@@ -123,7 +124,8 @@ bind-key C-s display-popup -E -w 80% -h 80% "lazytmux"
 | `Ctrl + r` / `F5` | **Any column** | Force refresh tmux state |
 | `x` | **Any column** | Kill selected session, window, or pane (with confirmation) |
 | `f` | **Sessions** | Toggle session favorite bookmark (`★`), persisted to `favorites.txt` next to the config |
-| `c` | **Panes / Inspect** | Copy captured pane buffer to system clipboard |
+| `c` | **Panes / Inspect** | **Clear the pane** — wipes its screen and scrollback (`send-keys -R` + `clear-history`). The process keeps running |
+| `y` | **Any column / Inspect** | Copy captured pane buffer to system clipboard |
 
 ### Inspect / Zoom Mode (`z` / `Space`)
 
@@ -137,7 +139,8 @@ bind-key C-s display-popup -E -w 80% -h 80% "lazytmux"
 | `G` | Jump to bottom of scrollback |
 | `/` | **Interactive search inside scrollback history** |
 | `n` / `N` | **Jump to next / previous search match** |
-| `c` | Copy visible scrollback to clipboard |
+| `c` | **Clear the pane's screen and scrollback** |
+| `y` | Copy visible scrollback to clipboard |
 | `Esc` / `q` / `z` / `Space` | Exit inspect / zoom mode |
 
 ---

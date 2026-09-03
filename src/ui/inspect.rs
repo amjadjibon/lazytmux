@@ -151,6 +151,8 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
 
         footer_spans.extend(vec![
             Span::styled(" c ", Style::default().bg(Color::DarkGray).fg(Color::White)),
+            Span::raw(" Clear  "),
+            Span::styled(" y ", Style::default().bg(Color::DarkGray).fg(Color::White)),
             Span::raw(" Copy  "),
             Span::styled(
                 " Enter ",

@@ -1433,6 +1433,7 @@ fn test_pane_control_hitboxes_match_what_is_drawn() {
             PaneControl::Swap,
             PaneControl::SplitStacked,
             PaneControl::SplitSideBySide,
+            PaneControl::Clear,
             PaneControl::Kill,
         ] {
             // Where does the rendered row actually show this button?
@@ -1459,8 +1460,8 @@ fn test_pane_control_hitboxes_match_what_is_drawn() {
 fn test_split_and_close_buttons_survive_narrow_cards() {
     use lazytmux::ui::panes::{PaneControl, control_strip};
 
-    assert!(control_strip(13).is_none(), "no room for controls at all");
-    for width in [14u16, 20, 28, 40] {
+    assert!(control_strip(12).is_none(), "no room for controls at all");
+    for width in [13u16, 14, 20, 28, 40] {
         let strip = control_strip(width).expect("controls fit");
         for control in [
             PaneControl::SplitStacked,
@@ -2196,4 +2197,193 @@ fn test_live_break_pane_moves_pane_to_new_window() {
         Some(windows_before + 1),
         "the pane should have become a new window"
     );
+}
+
+/// The strip must never paint over the card's right border corner. The tiers
+/// used to be hand-tuned constants; this pins the property they encoded, at
+/// every width, so adding a button cannot quietly overrun a narrow card.
+#[test]
+fn test_control_strip_never_overruns_the_card() {
+    use lazytmux::ui::panes::control_strip;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::widgets::Block;
+
+    for width in 1u16..=80 {
+        let Some(strip) = control_strip(width) else {
+            continue;
+        };
+        let mut terminal = Terminal::new(TestBackend::new(width, 3)).unwrap();
+        terminal
+            .draw(|f| {
+                f.render_widget(
+                    Block::bordered().title_bottom(strip.label().to_string()),
+                    f.area(),
+                );
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let bottom: String = (0..width).map(|x| buffer[(x, 2)].symbol()).collect();
+
+        // Every control the strip claims to hold must actually be painted...
+        for (_, _, control) in (0..width)
+            .filter_map(|c| strip.control_at(c).map(|ctl| (c, c, ctl)))
+            .collect::<Vec<_>>()
+        {
+            assert!(
+                bottom.contains(control.label()),
+                "width {width}: {control:?} hit-tests but was clipped\nrow: {bottom:?}"
+            );
+        }
+        // ...and the corners must survive.
+        let last = bottom.chars().last().unwrap();
+        assert!(
+            last == '┘' || last == '╯',
+            "width {width}: strip overran the right corner\nrow: {bottom:?}"
+        );
+    }
+}
+
+/// Clicking `[c]` asks before clearing, and confirming actually clears.
+#[test]
+fn test_clear_button_confirms_then_clears() {
+    use lazytmux::ui::panes::{PaneControl, control_strip};
+
+    assert_eq!(PaneControl::Clear.action(), Action::PromptClearPane);
+    assert_eq!(PaneControl::Clear.label(), "[c]");
+
+    let strip = control_strip(60).expect("controls fit a wide card");
+    assert!(
+        (0..60).any(|c| strip.control_at(c) == Some(PaneControl::Clear)),
+        "the [c] button must be reachable on a wide card"
+    );
+
+    let mut app = App::new(Box::new(MockTmuxClient::new()), Config::default(), true);
+    app.focus = FocusColumn::Panes;
+    assert!(
+        !app.selected_pane().unwrap().preview_lines.is_empty(),
+        "the pane starts with content to clear"
+    );
+
+    app.update(PaneControl::Clear.action()).unwrap();
+    assert!(
+        matches!(
+            app.mode,
+            Mode::Confirm(lazytmux::app::ConfirmTarget::ClearPane(..))
+        ),
+        "the button must ask first, mode was {:?}",
+        app.mode
+    );
+    assert!(
+        !app.selected_pane().unwrap().preview_lines.is_empty(),
+        "nothing may be cleared before confirming"
+    );
+
+    app.update(Action::CancelModal).unwrap();
+    assert!(
+        !app.selected_pane().unwrap().preview_lines.is_empty(),
+        "cancelling must leave the pane alone"
+    );
+
+    app.update(PaneControl::Clear.action()).unwrap();
+    app.update(Action::ConfirmDestructive).unwrap();
+    assert_eq!(app.mode, Mode::Normal);
+    assert!(
+        app.selected_pane().unwrap().preview_lines.is_empty(),
+        "confirming must clear the pane"
+    );
+}
+
+/// `c` clears and `y` copies — in the Panes column and in inspect mode.
+/// `c` stays inert in the other columns so a destructive key cannot fire at a
+/// pane that is not in focus.
+#[test]
+fn test_clear_and_copy_key_bindings() {
+    let mut app = App::new(Box::new(MockTmuxClient::new()), Config::default(), true);
+
+    app.focus = FocusColumn::Panes;
+    assert_eq!(
+        app.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE)),
+        Some(Action::ClearPane)
+    );
+    assert_eq!(
+        app.handle_key_event(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE)),
+        Some(Action::CopyPaneOutput)
+    );
+
+    for column in [FocusColumn::Sessions, FocusColumn::Windows] {
+        app.focus = column;
+        assert_eq!(
+            app.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE)),
+            None,
+            "{column:?}: c must not clear a pane that is not in focus"
+        );
+        assert_eq!(
+            app.handle_key_event(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE)),
+            Some(Action::CopyPaneOutput),
+            "{column:?}: y copies from any column"
+        );
+    }
+
+    app.focus = FocusColumn::Panes;
+    app.update(Action::ToggleInspect).unwrap();
+    assert!(matches!(app.mode, Mode::InspectPane { .. }));
+    assert_eq!(
+        app.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE)),
+        Some(Action::ClearPane)
+    );
+    assert_eq!(
+        app.handle_key_event(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE)),
+        Some(Action::CopyPaneOutput)
+    );
+}
+
+/// The mock accepts any tmux argument, so only a live server can prove the
+/// command is right — `clear-history` alone leaves the visible screen intact.
+#[test]
+fn test_live_clear_pane_wipes_screen_and_scrollback() {
+    use lazytmux::tmux::{CliTmuxClient, TmuxClient};
+    use std::process::Command;
+
+    if Command::new("tmux").arg("-V").output().is_err() {
+        println!("tmux CLI not available, skipping live test");
+        return;
+    }
+
+    let session = "lazytmux_ci_clear_test";
+    let _ = Command::new("tmux")
+        .args(["new-session", "-d", "-s", session, "-x", "80", "-y", "24"])
+        .output();
+
+    let mut client = CliTmuxClient::new();
+    let pane = client
+        .fetch_full_tree()
+        .unwrap_or_default()
+        .iter()
+        .find(|s| s.name == session)
+        .map(|s| s.windows[0].panes[0].id.clone());
+
+    let outcome = pane.as_ref().map(|pane| {
+        let _ = client.send_keys(pane, "printf 'MARKER_%s\\n' 1 2 3 4 5");
+        std::thread::sleep(std::time::Duration::from_millis(600));
+        let before = String::from_utf8_lossy(&client.capture_pane(pane, 200, false).unwrap())
+            .matches("MARKER_")
+            .count();
+
+        let result = client.clear_pane(pane);
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let after = String::from_utf8_lossy(&client.capture_pane(pane, 200, false).unwrap())
+            .matches("MARKER_")
+            .count();
+        (before, result, after)
+    });
+
+    let _ = Command::new("tmux")
+        .args(["kill-session", "-t", session])
+        .output();
+
+    let (before, result, after) = outcome.expect("test session was created");
+    result.expect("clear_pane must succeed against a real tmux server");
+    assert!(before > 0, "the pane should have had output to clear");
+    assert_eq!(after, 0, "screen and scrollback must both be empty");
 }

@@ -50,6 +50,10 @@ pub enum Action {
     BreakPane,
     PromptKill,
     PromptRespawnPane,
+    /// Clear the selected pane immediately (the keyboard path).
+    ClearPane,
+    /// Clear the selected pane, asking first (the `[c]` button path).
+    PromptClearPane,
     ConfirmDestructive,
     CancelModal,
     ModalInput(char),
