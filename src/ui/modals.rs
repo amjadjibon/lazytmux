@@ -70,7 +70,8 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
 }
 
 fn render_new_pane(pane_id: &crate::domain::PaneId, frame: &mut Frame, area: Rect, theme: &Theme) {
-    let overlay_area = centered_fixed(52, 9, area);
+    let layout = split_layout(area);
+    let overlay_area = layout.overlay;
     frame.render_widget(Clear, overlay_area);
 
     let block = Block::default()
@@ -88,69 +89,31 @@ fn render_new_pane(pane_id: &crate::domain::PaneId, frame: &mut Frame, area: Rec
                 .add_modifier(Modifier::BOLD),
         );
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(1)
-        .constraints([Constraint::Min(4), Constraint::Length(1)])
-        .split(block.inner(overlay_area));
-
     frame.render_widget(block, overlay_area);
 
-    let lines = vec![
-        Line::from(vec![
-            Span::raw("Split target pane "),
-            Span::styled(
-                &pane_id.0,
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(":"),
-        ]),
-        Line::raw(""),
-        Line::from(vec![
-            Span::styled(
-                " [v] ",
-                Style::default()
-                    .bg(Color::Cyan)
-                    .fg(Color::Black)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" Vertical Split   (side-by-side columns)"),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                " [h] ",
-                Style::default()
-                    .bg(Color::Cyan)
-                    .fg(Color::Black)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" Horizontal Split (stacked top/bottom)"),
-        ]),
-    ];
-
-    let msg_widget = Paragraph::new(lines);
-    frame.render_widget(msg_widget, chunks[0]);
-
-    let prompt_line = Line::from(vec![
+    // The action row below carries the choices; repeating them here just made
+    // the dialog say everything twice.
+    let lines = vec![Line::from(vec![
+        Span::raw("Split pane "),
         Span::styled(
-            " [v/h] ",
+            &pane_id.0,
             Style::default()
-                .bg(Color::Cyan)
-                .fg(Color::Black)
+                .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::raw(" Choose Split   "),
-        Span::styled(
-            " [Esc] ",
-            Style::default().bg(Color::DarkGray).fg(Color::White),
-        ),
-        Span::raw(" Cancel"),
-    ]);
+        Span::raw(" into:"),
+    ])];
 
-    let prompt_widget = Paragraph::new(prompt_line).style(theme.dim);
-    frame.render_widget(prompt_widget, chunks[1]);
+    let msg_widget = Paragraph::new(lines);
+    frame.render_widget(msg_widget, layout.body);
+
+    let spans = button_spans(split_buttons(layout.buttons.width), |button| match button {
+        SplitButton::Cancel => (Color::DarkGray, Color::White),
+        _ => (Color::Cyan, Color::Black),
+    });
+
+    let prompt_widget = Paragraph::new(Line::from(spans)).style(theme.dim);
+    frame.render_widget(prompt_widget, layout.buttons);
 }
 
 /// A clickable choice in the confirmation dialog.
@@ -160,17 +123,83 @@ pub enum ConfirmButton {
     No,
 }
 
-struct ButtonSpec {
+/// One button in a dialog's action row: a styled key badge plus its word.
+/// Both halves form one hit region, to give the mouse a bigger target.
+struct ButtonSpec<T: 'static> {
     key: &'static str,
     text: &'static str,
-    button: ConfirmButton,
+    button: T,
+}
+
+const BUTTON_GAP: &str = "   ";
+
+fn row_width<T>(specs: &[ButtonSpec<T>]) -> u16 {
+    use unicode_width::UnicodeWidthStr;
+    let content: usize = specs.iter().map(|s| s.key.width() + s.text.width()).sum();
+    let gaps = specs.len().saturating_sub(1) * BUTTON_GAP.width();
+    (content + gaps) as u16
+}
+
+/// The first button set that fits `width`, falling back to the narrowest so a
+/// dialog is never too small to answer.
+fn widest_fitting<'a, T>(sets: &[&'a [ButtonSpec<T>]], width: u16) -> &'a [ButtonSpec<T>] {
+    sets.iter()
+        .copied()
+        .find(|specs| row_width(specs) <= width)
+        .unwrap_or_else(|| sets[sets.len() - 1])
+}
+
+/// The button at a screen position within an action row, if any.
+fn button_at<T: Copy>(specs: &[ButtonSpec<T>], row_area: Rect, column: u16, row: u16) -> Option<T> {
+    use unicode_width::UnicodeWidthStr;
+
+    if row_area.height == 0 || row != row_area.y {
+        return None;
+    }
+    let mut x = row_area.x;
+    for (idx, spec) in specs.iter().enumerate() {
+        if idx > 0 {
+            x += BUTTON_GAP.width() as u16;
+        }
+        let width = (spec.key.width() + spec.text.width()) as u16;
+        if column >= x && column < x + width {
+            return Some(spec.button);
+        }
+        x += width;
+    }
+    None
+}
+
+/// Draw an action row, colouring each badge by its role.
+fn button_spans<T: Copy>(
+    specs: &[ButtonSpec<T>],
+    badge: impl Fn(T) -> (Color, Color),
+) -> Vec<Span<'static>> {
+    let mut spans = Vec::with_capacity(specs.len() * 3);
+    for (idx, spec) in specs.iter().enumerate() {
+        if idx > 0 {
+            spans.push(Span::raw(BUTTON_GAP));
+        }
+        let (bg, fg) = badge(spec.button);
+        spans.push(Span::styled(
+            spec.key,
+            Style::default().bg(bg).fg(fg).add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::styled(
+            spec.text,
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+    spans
 }
 
 /// The dialog's buttons, widest form first. Drawing and hit-testing both walk
 /// the same list, so a button is always clickable exactly where it is painted.
 /// The key badge and its word form one hit region, to give the mouse a bigger
 /// target.
-const BUTTONS_FULL: &[ButtonSpec] = &[
+const BUTTONS_FULL: &[ButtonSpec<ConfirmButton>] = &[
     ButtonSpec {
         key: " [y/Enter] ",
         text: " Yes ",
@@ -183,7 +212,7 @@ const BUTTONS_FULL: &[ButtonSpec] = &[
     },
 ];
 
-const BUTTONS_COMPACT: &[ButtonSpec] = &[
+const BUTTONS_COMPACT: &[ButtonSpec<ConfirmButton>] = &[
     ButtonSpec {
         key: " [y] ",
         text: " Yes ",
@@ -198,7 +227,7 @@ const BUTTONS_COMPACT: &[ButtonSpec] = &[
 
 /// Last resort: the choices themselves, with the keys left to the help text.
 /// A dialog must never be too narrow to answer.
-const BUTTONS_MINIMAL: &[ButtonSpec] = &[
+const BUTTONS_MINIMAL: &[ButtonSpec<ConfirmButton>] = &[
     ButtonSpec {
         key: "",
         text: " Yes ",
@@ -211,23 +240,8 @@ const BUTTONS_MINIMAL: &[ButtonSpec] = &[
     },
 ];
 
-const BUTTON_GAP: &str = "   ";
-
-fn buttons_width(specs: &[ButtonSpec]) -> u16 {
-    use unicode_width::UnicodeWidthStr;
-    let content: usize = specs.iter().map(|s| s.key.width() + s.text.width()).sum();
-    let gaps = specs.len().saturating_sub(1) * BUTTON_GAP.width();
-    (content + gaps) as u16
-}
-
-/// The widest button set that fits `width` columns.
-fn buttons_for(width: u16) -> &'static [ButtonSpec] {
-    for specs in [BUTTONS_FULL, BUTTONS_COMPACT] {
-        if buttons_width(specs) <= width {
-            return specs;
-        }
-    }
-    BUTTONS_MINIMAL
+fn buttons_for(width: u16) -> &'static [ButtonSpec<ConfirmButton>] {
+    widest_fitting(&[BUTTONS_FULL, BUTTONS_COMPACT, BUTTONS_MINIMAL], width)
 }
 
 /// Where the confirmation dialog and its parts are drawn inside `area`.
@@ -259,25 +273,13 @@ pub fn confirm_layout(area: Rect) -> ConfirmLayout {
 
 /// The confirmation button at a screen position, if any.
 pub fn confirm_button_at(area: Rect, column: u16, row: u16) -> Option<ConfirmButton> {
-    use unicode_width::UnicodeWidthStr;
-
     let layout = confirm_layout(area);
-    if layout.buttons.height == 0 || row != layout.buttons.y {
-        return None;
-    }
-
-    let mut x = layout.buttons.x;
-    for (idx, spec) in buttons_for(layout.buttons.width).iter().enumerate() {
-        if idx > 0 {
-            x += BUTTON_GAP.width() as u16;
-        }
-        let width = (spec.key.width() + spec.text.width()) as u16;
-        if column >= x && column < x + width {
-            return Some(spec.button);
-        }
-        x += width;
-    }
-    None
+    button_at(
+        buttons_for(layout.buttons.width),
+        layout.buttons,
+        column,
+        row,
+    )
 }
 
 fn render_confirm(target: &ConfirmTarget, frame: &mut Frame, area: Rect, theme: &Theme) {
@@ -322,27 +324,10 @@ fn render_confirm(target: &ConfirmTarget, frame: &mut Frame, area: Rect, theme: 
         .style(Style::default().fg(Color::White));
     frame.render_widget(msg_widget, layout.message);
 
-    let specs = buttons_for(layout.buttons.width);
-    let mut spans = Vec::with_capacity(specs.len() * 3);
-    for (idx, spec) in specs.iter().enumerate() {
-        if idx > 0 {
-            spans.push(Span::raw(BUTTON_GAP));
-        }
-        let (bg, fg) = match spec.button {
-            ConfirmButton::Yes => (Color::Red, Color::White),
-            ConfirmButton::No => (Color::DarkGray, Color::White),
-        };
-        spans.push(Span::styled(
-            spec.key,
-            Style::default().bg(bg).fg(fg).add_modifier(Modifier::BOLD),
-        ));
-        spans.push(Span::styled(
-            spec.text,
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
-        ));
-    }
+    let spans = button_spans(buttons_for(layout.buttons.width), |button| match button {
+        ConfirmButton::Yes => (Color::Red, Color::White),
+        ConfirmButton::No => (Color::DarkGray, Color::White),
+    });
 
     let prompt_widget = Paragraph::new(Line::from(spans)).style(theme.dim);
     frame.render_widget(prompt_widget, layout.buttons);
@@ -372,15 +357,7 @@ fn render_input_prompt(
         .title(format!(" {title} "))
         .title_style(Style::default().fg(accent).add_modifier(Modifier::BOLD));
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(1)
-        .constraints([
-            Constraint::Length(2), // Prompt label, two rows so it can wrap
-            Constraint::Length(3), // Input box
-            Constraint::Length(1), // Key hint
-        ])
-        .split(block.inner(overlay_area));
+    let layout = prompt_layout(area);
 
     frame.render_widget(block, overlay_area);
 
@@ -394,7 +371,7 @@ fn render_input_prompt(
     let prompt_widget = Paragraph::new(prompt)
         .wrap(Wrap { trim: false })
         .style(prompt_style);
-    frame.render_widget(prompt_widget, chunks[0]);
+    frame.render_widget(prompt_widget, layout.prompt);
 
     let input_box = Block::default()
         .borders(Borders::ALL)
@@ -412,26 +389,18 @@ fn render_input_prompt(
     ]);
 
     let input_widget = Paragraph::new(input_line).block(input_box);
-    frame.render_widget(input_widget, chunks[1]);
+    frame.render_widget(input_widget, layout.input);
 
-    let hint_line = Line::from(vec![
-        Span::styled(
-            " Enter ",
-            Style::default()
-                .bg(accent)
-                .fg(Color::Black)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(" Submit   "),
-        Span::styled(
-            " Esc ",
-            Style::default().bg(Color::DarkGray).fg(Color::White),
-        ),
-        Span::raw(" Cancel"),
-    ]);
+    let spans = button_spans(
+        prompt_buttons(layout.buttons.width),
+        |button| match button {
+            PromptButton::Submit => (accent, Color::Black),
+            PromptButton::Cancel => (Color::DarkGray, Color::White),
+        },
+    );
 
-    let hint_widget = Paragraph::new(hint_line).style(Style::default().fg(Color::DarkGray));
-    frame.render_widget(hint_widget, chunks[2]);
+    let hint_widget = Paragraph::new(Line::from(spans)).style(Style::default().fg(Color::DarkGray));
+    frame.render_widget(hint_widget, layout.buttons);
 }
 
 fn render_help(frame: &mut Frame, area: Rect, theme: &Theme) {
@@ -588,7 +557,7 @@ fn render_help(frame: &mut Frame, area: Rect, theme: &Theme) {
                 "  Mouse Drag / Buttons  ",
                 Style::default().fg(Color::Yellow),
             ),
-            Span::raw("On the selected card: [◀][▼][▲][▶] resize, [↕] swap,"),
+            Span::raw("Dialogs, headers and pane cards all answer to the mouse"),
         ]),
         Line::from(vec![
             Span::styled(
@@ -679,10 +648,169 @@ pub fn centered_fixed(width: u16, height: u16, area: Rect) -> Rect {
     }
 }
 
-/// Frame of the text-entry dialogs (new/rename/send). One prompt line, a
-/// three-row input box, one hint line, plus margin and borders.
+/// Frame of the text-entry dialogs (new/rename/send). Two prompt rows, a
+/// three-row input box, one action row, plus margin and borders.
 pub fn prompt_overlay(area: Rect) -> Rect {
     centered_fixed(58, 10, area)
+}
+
+/// A clickable choice in a text-entry dialog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromptButton {
+    Submit,
+    Cancel,
+}
+
+const PROMPT_FULL: &[ButtonSpec<PromptButton>] = &[
+    ButtonSpec {
+        key: " [Enter] ",
+        text: " Submit ",
+        button: PromptButton::Submit,
+    },
+    ButtonSpec {
+        key: " [Esc] ",
+        text: " Cancel ",
+        button: PromptButton::Cancel,
+    },
+];
+
+const PROMPT_COMPACT: &[ButtonSpec<PromptButton>] = &[
+    ButtonSpec {
+        key: "",
+        text: " Submit ",
+        button: PromptButton::Submit,
+    },
+    ButtonSpec {
+        key: "",
+        text: " Cancel ",
+        button: PromptButton::Cancel,
+    },
+];
+
+fn prompt_buttons(width: u16) -> &'static [ButtonSpec<PromptButton>] {
+    widest_fitting(&[PROMPT_FULL, PROMPT_COMPACT], width)
+}
+
+/// Where a text-entry dialog and its parts are drawn inside `area`.
+pub struct PromptLayout {
+    pub overlay: Rect,
+    pub prompt: Rect,
+    pub input: Rect,
+    pub buttons: Rect,
+}
+
+pub fn prompt_layout(area: Rect) -> PromptLayout {
+    let overlay = prompt_overlay(area);
+    let inner = Block::default().borders(Borders::ALL).inner(overlay);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([
+            Constraint::Length(2), // Prompt label, two rows so it can wrap
+            Constraint::Length(3), // Input box
+            Constraint::Length(1), // Action row
+        ])
+        .split(inner);
+    PromptLayout {
+        overlay,
+        prompt: chunks[0],
+        input: chunks[1],
+        buttons: chunks[2],
+    }
+}
+
+/// The Submit / Cancel button at a screen position, if any.
+pub fn prompt_button_at(area: Rect, column: u16, row: u16) -> Option<PromptButton> {
+    let layout = prompt_layout(area);
+    button_at(
+        prompt_buttons(layout.buttons.width),
+        layout.buttons,
+        column,
+        row,
+    )
+}
+
+/// A clickable choice in the new-pane dialog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SplitButton {
+    SideBySide,
+    Stacked,
+    Cancel,
+}
+
+const SPLIT_FULL: &[ButtonSpec<SplitButton>] = &[
+    ButtonSpec {
+        key: " [v] ",
+        text: " Side by side ",
+        button: SplitButton::SideBySide,
+    },
+    ButtonSpec {
+        key: " [h] ",
+        text: " Stacked ",
+        button: SplitButton::Stacked,
+    },
+    ButtonSpec {
+        key: " [Esc] ",
+        text: " Cancel ",
+        button: SplitButton::Cancel,
+    },
+];
+
+const SPLIT_COMPACT: &[ButtonSpec<SplitButton>] = &[
+    ButtonSpec {
+        key: " [v] ",
+        text: "",
+        button: SplitButton::SideBySide,
+    },
+    ButtonSpec {
+        key: " [h] ",
+        text: "",
+        button: SplitButton::Stacked,
+    },
+    ButtonSpec {
+        key: " [Esc] ",
+        text: "",
+        button: SplitButton::Cancel,
+    },
+];
+
+fn split_buttons(width: u16) -> &'static [ButtonSpec<SplitButton>] {
+    widest_fitting(&[SPLIT_FULL, SPLIT_COMPACT], width)
+}
+
+/// Where the new-pane dialog and its parts are drawn inside `area`.
+pub struct SplitLayout {
+    pub overlay: Rect,
+    pub body: Rect,
+    pub buttons: Rect,
+}
+
+pub fn split_layout(area: Rect) -> SplitLayout {
+    // Wide enough for the full labelled action row, which is now the only
+    // place the choices appear.
+    let overlay = centered_fixed(60, 7, area);
+    let inner = Block::default().borders(Borders::ALL).inner(overlay);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .split(inner);
+    SplitLayout {
+        overlay,
+        body: chunks[0],
+        buttons: chunks[1],
+    }
+}
+
+/// The split choice at a screen position, if any.
+pub fn split_button_at(area: Rect, column: u16, row: u16) -> Option<SplitButton> {
+    let layout = split_layout(area);
+    button_at(
+        split_buttons(layout.buttons.width),
+        layout.buttons,
+        column,
+        row,
+    )
 }
 
 pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {

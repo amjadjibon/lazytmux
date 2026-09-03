@@ -1949,3 +1949,161 @@ fn test_header_buttons_create_and_confirm_kill() {
     app.update(Action::ConfirmDestructive).unwrap();
     assert_eq!(app.selected_session().unwrap().windows.len(), before - 1);
 }
+
+/// Submit / Cancel and the split choices must be clickable exactly where they
+/// are painted. Checked against the rendered terminal buffer, not against the
+/// button definitions themselves.
+#[test]
+fn test_dialog_button_hitboxes_match_what_is_drawn() {
+    use lazytmux::ui::modals::{
+        PromptButton, SplitButton, prompt_button_at, prompt_layout, split_button_at, split_layout,
+    };
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::layout::Rect;
+
+    for (w, h) in [(60u16, 20u16), (80, 24), (120, 40), (200, 50)] {
+        let area = Rect::new(0, 0, w, h);
+
+        // Text-entry dialog.
+        let mut app = make_app();
+        app.last_area = area;
+        app.update(Action::PromptNewSession).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
+        terminal.draw(|f| lazytmux::ui::render(&app, f)).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+
+        let row = prompt_layout(area).buttons.y;
+        let painted: String = (0..w).map(|x| buffer[(x, row)].symbol()).collect();
+        for (needle, expected) in [
+            ("Submit", PromptButton::Submit),
+            ("Cancel", PromptButton::Cancel),
+        ] {
+            let idx = painted
+                .find(needle)
+                .unwrap_or_else(|| panic!("{w}x{h}: {needle} not drawn: {painted:?}"));
+            let column = painted[..idx].chars().count() as u16;
+            for offset in 0..needle.len() as u16 {
+                assert_eq!(
+                    prompt_button_at(area, column + offset, row),
+                    Some(expected),
+                    "{w}x{h}: {needle} painted at {} but hit-tests wrong\nrow: {painted:?}",
+                    column + offset
+                );
+            }
+        }
+
+        // New-pane dialog.
+        let mut app = make_app();
+        app.last_area = area;
+        app.focus = FocusColumn::Panes;
+        app.update(Action::PromptNewPane).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
+        terminal.draw(|f| lazytmux::ui::render(&app, f)).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+
+        let row = split_layout(area).buttons.y;
+        let painted: String = (0..w).map(|x| buffer[(x, row)].symbol()).collect();
+        for (needle, expected) in [
+            ("[v]", SplitButton::SideBySide),
+            ("[h]", SplitButton::Stacked),
+            ("[Esc]", SplitButton::Cancel),
+        ] {
+            let idx = painted
+                .find(needle)
+                .unwrap_or_else(|| panic!("{w}x{h}: {needle} not drawn: {painted:?}"));
+            let column = painted[..idx].chars().count() as u16;
+            for offset in 0..needle.len() as u16 {
+                assert_eq!(
+                    split_button_at(area, column + offset, row),
+                    Some(expected),
+                    "{w}x{h}: {needle} painted at {} but hit-tests wrong\nrow: {painted:?}",
+                    column + offset
+                );
+            }
+        }
+    }
+}
+
+/// Clicking Submit creates; clicking Cancel does not. Same for the split
+/// choices. Driven through real mouse events.
+#[test]
+fn test_dialog_buttons_respond_to_clicks() {
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+    use lazytmux::ui::modals::{
+        PromptButton, SplitButton, prompt_button_at, prompt_layout, split_button_at, split_layout,
+    };
+    use ratatui::layout::Rect;
+
+    let area = Rect::new(0, 0, 120, 40);
+    let click = |app: &mut App, column: u16, row: u16| {
+        let event = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        };
+        if let Some(action) = app.handle_mouse_event(event, area) {
+            let mut next = app.update(action).unwrap();
+            while let Some(a) = next {
+                next = app.update(a).unwrap();
+            }
+        }
+    };
+
+    let prompt_row = prompt_layout(area).buttons.y;
+    let prompt_col = |wanted: PromptButton| -> u16 {
+        (0..120u16)
+            .find(|c| prompt_button_at(area, *c, prompt_row) == Some(wanted))
+            .expect("button present")
+    };
+
+    // Cancel creates nothing.
+    let mut app = make_app();
+    app.last_area = area;
+    let before = app.sessions.len();
+    app.update(Action::PromptNewSession).unwrap();
+    for c in "scratch".chars() {
+        app.update(Action::ModalInput(c)).unwrap();
+    }
+    click(&mut app, prompt_col(PromptButton::Cancel), prompt_row);
+    assert_eq!(app.mode, Mode::Normal);
+    assert_eq!(app.sessions.len(), before, "Cancel created a session");
+
+    // Submit creates the session that was typed.
+    app.update(Action::PromptNewSession).unwrap();
+    for c in "scratch".chars() {
+        app.update(Action::ModalInput(c)).unwrap();
+    }
+    click(&mut app, prompt_col(PromptButton::Submit), prompt_row);
+    assert_eq!(app.mode, Mode::Normal);
+    assert_eq!(app.sessions.len(), before + 1, "Submit did not create");
+    assert!(app.sessions.iter().any(|s| s.name == "scratch"));
+
+    // Split choices.
+    let split_row = split_layout(area).buttons.y;
+    let split_col = |wanted: SplitButton| -> u16 {
+        (0..120u16)
+            .find(|c| split_button_at(area, *c, split_row) == Some(wanted))
+            .expect("button present")
+    };
+
+    for (button, expected_growth) in [
+        (SplitButton::Cancel, 0usize),
+        (SplitButton::SideBySide, 1),
+        (SplitButton::Stacked, 1),
+    ] {
+        let mut app = make_app();
+        app.last_area = area;
+        app.focus = FocusColumn::Panes;
+        let before = app.selected_window().unwrap().panes.len();
+        app.update(Action::PromptNewPane).unwrap();
+        click(&mut app, split_col(button), split_row);
+        assert_eq!(app.mode, Mode::Normal, "{button:?} left a modal open");
+        assert_eq!(
+            app.selected_window().unwrap().panes.len(),
+            before + expected_growth,
+            "{button:?} produced the wrong pane count"
+        );
+    }
+}

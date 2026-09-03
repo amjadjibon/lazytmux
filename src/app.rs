@@ -2020,16 +2020,48 @@ impl App {
                     return Ok(None);
                 }
 
-                // Every other modal swallows the click. Without this a click
-                // would fall through to the workspace behind the dialog and
-                // move the selection — or hit a pane-card button underneath it.
+                // The new-pane dialog offers its split choices as buttons.
+                if let Mode::PromptNewPane { .. } = self.mode {
+                    use crate::ui::modals::SplitButton;
+                    if let Some(button) =
+                        crate::ui::modals::split_button_at(self.last_area, column, row)
+                    {
+                        return match button {
+                            SplitButton::SideBySide => {
+                                self.update(Action::SplitPane { vertical: true })
+                            }
+                            SplitButton::Stacked => {
+                                self.update(Action::SplitPane { vertical: false })
+                            }
+                            SplitButton::Cancel => self.update(Action::CancelModal),
+                        };
+                    }
+                    let overlay = crate::ui::modals::split_layout(self.last_area).overlay;
+                    if !contains(overlay, column, row) {
+                        self.mode = Mode::Normal;
+                    }
+                    return Ok(None);
+                }
+
+                // Text-entry dialogs: Submit and Cancel are clickable, and a
+                // click outside cancels. Either way the click stops here — it
+                // must not fall through to the workspace behind the dialog and
+                // move the selection, or hit a pane-card button underneath it.
                 if let Mode::PromptSendCommand { .. }
                 | Mode::PromptNewSession { .. }
                 | Mode::PromptNewWindow { .. }
-                | Mode::PromptNewPane { .. }
                 | Mode::PromptRenameSession { .. }
                 | Mode::PromptRenameWindow { .. } = self.mode
                 {
+                    use crate::ui::modals::PromptButton;
+                    if let Some(button) =
+                        crate::ui::modals::prompt_button_at(self.last_area, column, row)
+                    {
+                        return match button {
+                            PromptButton::Submit => self.update(Action::ModalSubmit),
+                            PromptButton::Cancel => self.update(Action::CancelModal),
+                        };
+                    }
                     let overlay_area = crate::ui::modals::prompt_overlay(self.last_area);
                     if !contains(overlay_area, column, row) {
                         self.mode = Mode::Normal;
