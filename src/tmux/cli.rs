@@ -295,7 +295,9 @@ impl TmuxClient for CliTmuxClient {
     }
 
     fn break_pane(&mut self, pane: &PaneId) -> Result<()> {
-        self.run_cmd(&["break-pane", "-d", "-t", &pane.0])?;
+        // `-s` is the source pane; `-t` would be the destination *window*, and
+        // tmux rejects a pane id there with "can't specify pane here".
+        self.run_cmd(&["break-pane", "-d", "-s", &pane.0])?;
         Ok(())
     }
 
