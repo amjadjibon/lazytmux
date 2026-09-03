@@ -27,12 +27,14 @@ directories = "6.0"
 
 # Error Handling & Utilities
 anyhow = "1.0"
-thiserror = "2.0"
-color-eyre = "0.6"
 arboard = "3.6"
 
 [profile.release]
-opt-level = 3
+# "z" over 3: this is a UI-bound tool that spends its time waiting on tmux and
+# on terminal input, not in hot loops. The only measurable compute is ANSI
+# parsing, which is windowed to the visible viewport and runs at most once per
+# capture. Costs ~25us per frame; saves ~320KB of binary.
+opt-level = "z"
 lto = "fat"
 codegen-units = 1
 panic = "abort"

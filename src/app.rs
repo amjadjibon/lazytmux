@@ -47,6 +47,38 @@ fn capture_depth(pane_id: &PaneId, inspected: Option<&PaneId>, preview_lines: us
     }
 }
 
+/// Refresh every pane preview in `window`.
+///
+/// The inspected pane needs a deeper capture than the rest, so panes are
+/// grouped by depth and each group is fetched in a single batched call —
+/// spawning `tmux` costs milliseconds, so the number of spawns per refresh is
+/// what matters, not the bytes captured.
+fn capture_window_previews(
+    client: &dyn TmuxClient,
+    window: &mut Window,
+    inspected: Option<&PaneId>,
+    preview_lines: usize,
+) {
+    let mut by_depth: Vec<(usize, Vec<PaneId>)> = Vec::new();
+    for pane in &window.panes {
+        let depth = capture_depth(&pane.id, inspected, preview_lines);
+        match by_depth.iter_mut().find(|(d, _)| *d == depth) {
+            Some((_, ids)) => ids.push(pane.id.clone()),
+            None => by_depth.push((depth, vec![pane.id.clone()])),
+        }
+    }
+
+    for (depth, ids) in by_depth {
+        for (id, captured) in ids.iter().zip(client.capture_panes(&ids, depth, true)) {
+            if let Some(raw) = captured
+                && let Some(pane) = window.get_pane_mut(id)
+            {
+                pane.set_preview(raw);
+            }
+        }
+    }
+}
+
 const LAYOUT_PRESETS: &[&str] = &[
     "even-horizontal",
     "even-vertical",
@@ -254,12 +286,12 @@ impl App {
         if let Some(session) = tree.get_mut(s_idx)
             && let Some(window) = session.windows.get_mut(w_idx)
         {
-            for pane in &mut window.panes {
-                let depth = capture_depth(&pane.id, inspected.as_ref(), preview_lines);
-                if let Ok(raw) = self.client.capture_pane(&pane.id, depth, true) {
-                    pane.set_preview(raw);
-                }
-            }
+            capture_window_previews(
+                self.client.as_ref(),
+                window,
+                inspected.as_ref(),
+                preview_lines,
+            );
         }
 
         self.sessions = tree;
@@ -276,12 +308,12 @@ impl App {
         if let Some(session) = self.sessions.get_mut(s_idx)
             && let Some(window) = session.windows.get_mut(w_idx)
         {
-            for pane in &mut window.panes {
-                let depth = capture_depth(&pane.id, inspected.as_ref(), preview_lines);
-                if let Ok(raw) = self.client.capture_pane(&pane.id, depth, true) {
-                    pane.set_preview(raw);
-                }
-            }
+            capture_window_previews(
+                self.client.as_ref(),
+                window,
+                inspected.as_ref(),
+                preview_lines,
+            );
         }
         self.clamp_inspect_scroll();
     }
@@ -1374,7 +1406,9 @@ impl App {
 
             Action::CopyPaneOutput => {
                 if let Some(pane) = self.selected_pane() {
-                    let text = pane.preview_lines.join("\n");
+                    // preview_lines come from `capture-pane -e`, so they carry
+                    // SGR sequences that must not end up on the clipboard.
+                    let text = pane.plain_preview();
                     match arboard::Clipboard::new() {
                         Ok(mut clipboard) => {
                             if clipboard.set_text(text).is_ok() {

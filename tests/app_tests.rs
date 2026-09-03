@@ -1214,3 +1214,70 @@ fn test_git_branch_lookup_is_cached() {
         "5000 cached lookups took {elapsed:?} — cache is not being hit"
     );
 }
+
+/// Batching several `capture-pane` calls into one `tmux` invocation must return
+/// exactly what the one-at-a-time path returns. Spawning tmux costs ~4ms, which
+/// dwarfs everything this program computes, so this is the refresh hot path.
+#[test]
+fn test_live_batched_capture_matches_individual() {
+    use lazytmux::domain::PaneId;
+    use lazytmux::tmux::{CliTmuxClient, TmuxClient};
+    use std::process::Command;
+
+    if Command::new("tmux").arg("-V").output().is_err() {
+        println!("tmux CLI not available, skipping live test");
+        return;
+    }
+
+    let session = "lazytmux_ci_batch_test";
+    let _ = Command::new("tmux")
+        .args(["new-session", "-d", "-s", session, "-n", "batch"])
+        .output();
+    for msg in ["alpha", "beta"] {
+        let _ = Command::new("tmux")
+            .args(["split-window", "-t", session])
+            .output();
+        let _ = Command::new("tmux")
+            .args(["send-keys", "-t", session, &format!("echo {msg}"), "Enter"])
+            .output();
+    }
+    std::thread::sleep(std::time::Duration::from_millis(600));
+
+    let client = CliTmuxClient::new();
+    let ids: Vec<PaneId> = client
+        .fetch_full_tree()
+        .unwrap_or_default()
+        .iter()
+        .find(|s| s.name == session)
+        .map(|s| s.windows[0].panes.iter().map(|p| p.id.clone()).collect())
+        .unwrap_or_default();
+
+    let individual: Vec<Option<Vec<u8>>> = ids
+        .iter()
+        .map(|p| client.capture_pane(p, 30, true).ok())
+        .collect();
+    let batched = client.capture_panes(&ids, 30, true);
+
+    let _ = Command::new("tmux")
+        .args(["kill-session", "-t", session])
+        .output();
+
+    assert!(
+        ids.len() >= 3,
+        "expected a multi-pane window, got {}",
+        ids.len()
+    );
+    assert_eq!(batched.len(), ids.len(), "one result per requested pane");
+    for (i, (b, s)) in batched.iter().zip(individual.iter()).enumerate() {
+        let b = String::from_utf8_lossy(b.as_deref().unwrap_or_default())
+            .trim_end()
+            .to_string();
+        let s = String::from_utf8_lossy(s.as_deref().unwrap_or_default())
+            .trim_end()
+            .to_string();
+        assert_eq!(
+            b, s,
+            "pane {i} differs between batched and individual capture"
+        );
+    }
+}

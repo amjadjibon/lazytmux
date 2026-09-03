@@ -4,6 +4,31 @@ use crate::domain::{Pane, PaneId, Session, SessionId, Window, WindowId};
 use anyhow::{Context, Result, anyhow};
 use std::process::Command;
 
+/// Marker printed between batched pane captures. Long and specific enough that
+/// a pane echoing it by accident is not a practical concern; if it happens the
+/// worst case is one mis-split preview until the next refresh.
+const CAPTURE_SEPARATOR: &str = "@@lazytmux-capture-boundary-7f3a91@@";
+
+/// Split batched `capture-pane` output on the separator lines, or `None` when
+/// the shape is not what we asked for.
+fn split_captures(out: &[u8], expected: usize) -> Option<Vec<Vec<u8>>> {
+    let sep = CAPTURE_SEPARATOR.as_bytes();
+    let mut segments: Vec<Vec<u8>> = Vec::with_capacity(expected);
+    let mut current: Vec<u8> = Vec::new();
+
+    for line in out.split(|b| *b == b'\n') {
+        if line == sep {
+            segments.push(std::mem::take(&mut current));
+        } else {
+            current.extend_from_slice(line);
+            current.push(b'\n');
+        }
+    }
+    segments.push(current);
+
+    (segments.len() == expected).then_some(segments)
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct CliTmuxClient;
 
@@ -102,6 +127,57 @@ impl TmuxClient for CliTmuxClient {
             args.insert(1, "-e");
         }
         self.run_cmd_raw(&args)
+    }
+
+    /// One `tmux` process for the whole batch instead of one per pane.
+    ///
+    /// tmux takes several commands in a single invocation when they are
+    /// separated by a literal `;` argument, so the captures are interleaved
+    /// with `display-message` markers and the output is split on those.
+    fn capture_panes(
+        &self,
+        panes: &[PaneId],
+        lines: usize,
+        preserve_ansi: bool,
+    ) -> Vec<Option<Vec<u8>>> {
+        if panes.len() < 2 {
+            return panes
+                .iter()
+                .map(|p| self.capture_pane(p, lines, preserve_ansi).ok())
+                .collect();
+        }
+
+        let lines_arg = format!("-{}", lines);
+        let mut args: Vec<&str> = Vec::with_capacity(panes.len() * 9);
+        for (idx, pane) in panes.iter().enumerate() {
+            if idx > 0 {
+                args.extend_from_slice(&[";", "display-message", "-p", CAPTURE_SEPARATOR, ";"]);
+            }
+            args.push("capture-pane");
+            args.push("-p");
+            if preserve_ansi {
+                args.push("-e");
+            }
+            args.extend_from_slice(&["-t", &pane.0, "-S", &lines_arg]);
+        }
+
+        // tmux aborts the whole sequence if any one command fails (a pane that
+        // just died, say), so anything unexpected falls back to one-at-a-time.
+        let Ok(out) = self.run_cmd_raw(&args) else {
+            return panes
+                .iter()
+                .map(|p| self.capture_pane(p, lines, preserve_ansi).ok())
+                .collect();
+        };
+
+        let segments = split_captures(&out, panes.len());
+        match segments {
+            Some(segments) => segments.into_iter().map(Some).collect(),
+            None => panes
+                .iter()
+                .map(|p| self.capture_pane(p, lines, preserve_ansi).ok())
+                .collect(),
+        }
     }
 
     fn create_session(&mut self, name: &str) -> Result<SessionId> {

@@ -88,11 +88,15 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
         )
         .title_bottom(line_info);
 
-    // Slice preview lines based on scroll offset
+    // Slice preview lines to the visible viewport. Taking everything from the
+    // scroll offset to the end of a 2000-line buffer meant joining and
+    // ANSI-parsing all of it on every frame, only for the widget to clip it.
+    let viewport_height = chunks[0].height.saturating_sub(2) as usize;
     let visible_lines: Vec<String> = pane
         .preview_lines
         .iter()
         .skip(scroll_offset)
+        .take(viewport_height.max(1))
         .cloned()
         .collect();
 

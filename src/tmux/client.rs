@@ -17,6 +17,24 @@ pub trait TmuxClient: Send + Sync {
     fn fetch_full_tree(&self) -> Result<Vec<Session>>;
     fn capture_pane(&self, pane: &PaneId, lines: usize, preserve_ansi: bool) -> Result<Vec<u8>>;
 
+    /// Capture several panes at once, returning one entry per input pane
+    /// (`None` where that pane could not be captured).
+    ///
+    /// Spawning `tmux` costs milliseconds — far more than anything this program
+    /// computes — so implementations that can serve the whole batch in one
+    /// process should override this.
+    fn capture_panes(
+        &self,
+        panes: &[PaneId],
+        lines: usize,
+        preserve_ansi: bool,
+    ) -> Vec<Option<Vec<u8>>> {
+        panes
+            .iter()
+            .map(|p| self.capture_pane(p, lines, preserve_ansi).ok())
+            .collect()
+    }
+
     // Mutations
     fn create_session(&mut self, name: &str) -> Result<SessionId>;
     fn rename_session(&mut self, session: &SessionId, new_name: &str) -> Result<()>;

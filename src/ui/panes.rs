@@ -163,8 +163,10 @@ fn render_pane_card(
         }
     }
 
-    let text = pane.preview_text();
+    // Only the bottom `inner_height` lines are ever on screen; the rest were
+    // parsed and then scrolled out of view every frame.
     let inner_height = area.height.saturating_sub(2);
+    let text = pane.preview_text_tail(inner_height as usize);
     let total_lines = text.lines.len() as u16;
     let scroll_y = total_lines.saturating_sub(inner_height);
 

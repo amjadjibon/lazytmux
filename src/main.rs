@@ -1,4 +1,3 @@
-use color_eyre::eyre::eyre;
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::execute;
 use crossterm::terminal::{
@@ -20,8 +19,7 @@ use std::sync::OnceLock;
 /// cannot leave the user's tmux server reconfigured.
 static PREVIOUS_EXTENDED_KEYS: OnceLock<String> = OnceLock::new();
 
-fn main() -> color_eyre::Result<()> {
-    color_eyre::install()?;
+fn main() -> anyhow::Result<()> {
     init_panic_hook();
 
     let args: Vec<String> = std::env::args().collect();
@@ -116,18 +114,18 @@ fn main() -> color_eyre::Result<()> {
             match event {
                 AppEvent::Key(key) => {
                     if let Some(action) = app.handle_key_event(key) {
-                        let mut next_action = app.update(action).map_err(|e| eyre!("{e}"))?;
+                        let mut next_action = app.update(action)?;
                         while let Some(act) = next_action {
-                            next_action = app.update(act).map_err(|e| eyre!("{e}"))?;
+                            next_action = app.update(act)?;
                         }
                     }
                 }
                 AppEvent::Mouse(mouse) => {
                     let current_area = app.last_area;
                     if let Some(action) = app.handle_mouse_event(mouse, current_area) {
-                        let mut next_action = app.update(action).map_err(|e| eyre!("{e}"))?;
+                        let mut next_action = app.update(action)?;
                         while let Some(act) = next_action {
-                            next_action = app.update(act).map_err(|e| eyre!("{e}"))?;
+                            next_action = app.update(act)?;
                         }
                     }
                 }
@@ -169,8 +167,7 @@ fn main() -> color_eyre::Result<()> {
 
     // Execute handoff if a pane/session was selected
     if let Some((session_id, session_name, window_id, pane_id)) = app.pending_handoff {
-        execute_handoff(&session_id, &session_name, &window_id, &pane_id, is_mock)
-            .map_err(|e| eyre!("{e}"))?;
+        execute_handoff(&session_id, &session_name, &window_id, &pane_id, is_mock)?;
     }
 
     Ok(())
