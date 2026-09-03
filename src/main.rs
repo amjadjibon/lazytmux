@@ -13,6 +13,12 @@ use lazytmux::ui;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use std::io::{self, stdout};
+use std::sync::OnceLock;
+
+/// Previous value of the tmux server option `extended-keys`, recorded when we
+/// change it. Read by both the normal exit path and the panic hook, so a crash
+/// cannot leave the user's tmux server reconfigured.
+static PREVIOUS_EXTENDED_KEYS: OnceLock<String> = OnceLock::new();
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
@@ -32,7 +38,13 @@ fn main() -> color_eyre::Result<()> {
                 println!("lazytmux v{}", env!("CARGO_PKG_VERSION"));
                 return Ok(());
             }
-            _ => {}
+            unknown => {
+                // Silently ignoring this would start against the live tmux
+                // server when the user meant to pass --mock.
+                eprintln!("Error: unknown argument '{unknown}'.");
+                eprintln!("Run 'lazytmux --help' to see available options.");
+                std::process::exit(2);
+            }
         }
     }
 
@@ -52,12 +64,14 @@ fn main() -> color_eyre::Result<()> {
         std::process::exit(1);
     }
 
-    // Enable extended-keys in tmux if running inside tmux so modifiers like Ctrl+Enter can pass through
-    if !is_mock {
-        let _ = std::process::Command::new("tmux")
-            .args(["set", "-s", "extended-keys", "on"])
-            .output();
-    }
+    // Enable extended-keys so modifiers like Ctrl+Enter reach us. This is a
+    // *server*-wide tmux option affecting every session and every other client,
+    // so the previous value is restored before we exit.
+    let extended_keys = if is_mock {
+        None
+    } else {
+        ExtendedKeys::enable()
+    };
 
     // Terminal initialization
     enable_raw_mode()?;
@@ -148,6 +162,11 @@ fn main() -> color_eyre::Result<()> {
         )?;
     }
 
+    // execute_handoff never returns (it execs or exits), so restore first.
+    if let Some(guard) = extended_keys {
+        guard.restore();
+    }
+
     // Execute handoff if a pane/session was selected
     if let Some((session_id, session_name, window_id, pane_id)) = app.pending_handoff {
         execute_handoff(&session_id, &session_name, &window_id, &pane_id, is_mock)
@@ -157,9 +176,64 @@ fn main() -> color_eyre::Result<()> {
     Ok(())
 }
 
+/// Restores the tmux server's `extended-keys` option to whatever it was before
+/// lazytmux changed it.
+struct ExtendedKeys {
+    previous: String,
+}
+
+impl ExtendedKeys {
+    /// Turn the option on, remembering the old value. Returns `None` when the
+    /// value is already what we need, or when tmux refuses the query, so we
+    /// never restore a value we did not actually observe.
+    fn enable() -> Option<Self> {
+        let output = std::process::Command::new("tmux")
+            .args(["show", "-sv", "extended-keys"])
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let previous = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if previous == "on" {
+            return None;
+        }
+
+        let set = std::process::Command::new("tmux")
+            .args(["set", "-s", "extended-keys", "on"])
+            .output()
+            .ok()?;
+        if !set.status.success() {
+            return None;
+        }
+        let _ = PREVIOUS_EXTENDED_KEYS.set(previous.clone());
+        Some(Self { previous })
+    }
+
+    fn restore(&self) {
+        restore_extended_keys(&self.previous);
+    }
+}
+
+fn restore_extended_keys(previous: &str) {
+    if previous.is_empty() {
+        // No explicit value was recorded: unset ours rather than invent one.
+        let _ = std::process::Command::new("tmux")
+            .args(["set", "-su", "extended-keys"])
+            .output();
+    } else {
+        let _ = std::process::Command::new("tmux")
+            .args(["set", "-s", "extended-keys", previous])
+            .output();
+    }
+}
+
 fn init_panic_hook() {
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
+        if let Some(previous) = PREVIOUS_EXTENDED_KEYS.get() {
+            restore_extended_keys(previous);
+        }
         let _ = execute!(io::stdout(), crossterm::event::PopKeyboardEnhancementFlags);
         let _ = disable_raw_mode();
         let _ = execute!(
@@ -184,12 +258,13 @@ fn print_help() {
     println!("    -v, --version    Print version information");
     println!();
     println!("KEYBINDINGS:");
-    println!("    h/l, Tab         Switch column focus (Sessions, Windows, Panes)");
+    println!("    h/l, Tab         Switch column focus (l cycles layout in Panes)");
     println!("    j/k, Up/Down     Navigate items");
     println!("    Enter            Attach / Focus selection");
     println!("    /                Global fuzzy search");
     println!("    Space            Fullscreen Inspect Mode with scrollback");
-    println!("    n / R / x        Create, Rename, Kill");
+    println!("    n / r / x        Create, Rename, Kill");
+    println!("    Ctrl+r / Ctrl+x  Refresh / Respawn pane (asks first)");
     println!("    ?                Help cheatsheet");
     println!("    q, Esc           Quit");
 }

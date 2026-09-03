@@ -15,14 +15,37 @@ pub enum FocusColumn {
     Panes,
 }
 
+/// A destructive tmux operation awaiting confirmation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum KillTarget {
-    Session(SessionId, String),
-    Window(WindowId, String),
-    Pane(PaneId, String),
+pub enum ConfirmTarget {
+    KillSession(SessionId, String),
+    KillWindow(WindowId, String),
+    KillPane(PaneId, String),
+    /// `respawn-pane -k`: kills whatever is running in the pane and restarts it.
+    RespawnPane(PaneId, String),
 }
 
 use crate::ui::Theme;
+
+/// Scrollback captured when a pane is opened in Inspect mode.
+pub const INSPECT_SCROLLBACK_LINES: usize = 2000;
+
+/// A full refresh spawns three tmux processes and re-reads every pane, so a
+/// mouse drag must not trigger one per motion event.
+const DRAG_REFRESH_INTERVAL: Duration = Duration::from_millis(80);
+
+/// How much scrollback to capture for `pane_id`.
+///
+/// Inspect mode holds a deep buffer and a scroll offset into it; the periodic
+/// preview refresh must not replace that buffer with a short one, or the offset
+/// would index past the end.
+fn capture_depth(pane_id: &PaneId, inspected: Option<&PaneId>, preview_lines: usize) -> usize {
+    if inspected == Some(pane_id) {
+        INSPECT_SCROLLBACK_LINES
+    } else {
+        preview_lines
+    }
+}
 
 const LAYOUT_PRESETS: &[&str] = &[
     "even-horizontal",
@@ -105,8 +128,11 @@ pub enum Mode {
     PromptSendCommand {
         pane_id: PaneId,
         input: String,
+        /// synchronize-panes was on when the prompt opened: the command will be
+        /// broadcast to every pane in the window.
+        broadcast: bool,
     },
-    ConfirmKill(KillTarget),
+    Confirm(ConfirmTarget),
     Help,
 }
 
@@ -158,10 +184,18 @@ pub struct App {
     pub mouse_drag_col_border: Option<usize>,
     pub sidebar_mode: crate::ui::SidebarMode,
     pub last_click: Option<(Instant, u16, u16)>,
+    pub favorites: crate::favorites::Favorites,
+    last_throttled_refresh: Option<Instant>,
 }
 
 impl App {
     pub fn new(client: Box<dyn TmuxClient>, config: Config, is_mock: bool) -> Self {
+        // Mock mode must not touch the user's real favorites file.
+        let favorites = if is_mock {
+            crate::favorites::Favorites::ephemeral()
+        } else {
+            crate::favorites::Favorites::load()
+        };
         let border_type = match config.theme.border_style.as_str() {
             "double" => ratatui::widgets::BorderType::Double,
             "plain" => ratatui::widgets::BorderType::Plain,
@@ -188,27 +222,41 @@ impl App {
             mouse_drag_col_border: None,
             sidebar_mode: crate::ui::SidebarMode::Full,
             last_click: None,
+            favorites,
+            last_throttled_refresh: None,
         };
         let _ = app.refresh_data();
         app
     }
 
+    /// The pane currently open in Inspect mode, if any.
+    fn inspected_pane(&self) -> Option<PaneId> {
+        match &self.mode {
+            Mode::InspectPane { pane_id, .. } => Some(pane_id.clone()),
+            _ => None,
+        }
+    }
+
     pub fn refresh_data(&mut self) -> Result<()> {
         let mut tree = self.client.fetch_full_tree()?;
+
+        for session in tree.iter_mut() {
+            session.is_favorite = self.favorites.contains(&session.name);
+        }
 
         // PERFORMANCE OPTIMIZATION: Only capture preview buffers for the currently visible window.
         // Capturing all panes across all background sessions every 750ms causes massive subprocess
         // spawn overhead and high CPU usage. Capturing on-demand provides a 10x-50x speedup.
         let s_idx = self.selection.session_idx;
         let w_idx = self.selection.window_idx;
+        let inspected = self.inspected_pane();
+        let preview_lines = self.config.pane_preview_lines;
         if let Some(session) = tree.get_mut(s_idx)
             && let Some(window) = session.windows.get_mut(w_idx)
         {
             for pane in &mut window.panes {
-                if let Ok(raw) =
-                    self.client
-                        .capture_pane(&pane.id, self.config.pane_preview_lines, true)
-                {
+                let depth = capture_depth(&pane.id, inspected.as_ref(), preview_lines);
+                if let Ok(raw) = self.client.capture_pane(&pane.id, depth, true) {
                     pane.set_preview(raw);
                 }
             }
@@ -216,23 +264,53 @@ impl App {
 
         self.sessions = tree;
         self.clamp_selections();
+        self.clamp_inspect_scroll();
         Ok(())
     }
 
     pub fn refresh_active_window_preview(&mut self) {
         let s_idx = self.selection.session_idx;
         let w_idx = self.selection.window_idx;
+        let inspected = self.inspected_pane();
+        let preview_lines = self.config.pane_preview_lines;
         if let Some(session) = self.sessions.get_mut(s_idx)
             && let Some(window) = session.windows.get_mut(w_idx)
         {
             for pane in &mut window.panes {
-                if let Ok(raw) =
-                    self.client
-                        .capture_pane(&pane.id, self.config.pane_preview_lines, true)
-                {
+                let depth = capture_depth(&pane.id, inspected.as_ref(), preview_lines);
+                if let Ok(raw) = self.client.capture_pane(&pane.id, depth, true) {
                     pane.set_preview(raw);
                 }
             }
+        }
+        self.clamp_inspect_scroll();
+    }
+
+    /// Keep the Inspect scroll offset inside the buffer it indexes. The buffer
+    /// can shrink underneath it whenever the pane is cleared or re-captured.
+    fn clamp_inspect_scroll(&mut self) {
+        let Some(pane_id) = self.inspected_pane() else {
+            return;
+        };
+        let max = self
+            .selected_window()
+            .and_then(|w| w.get_pane(&pane_id))
+            .map(|p| p.preview_lines.len())
+            .unwrap_or(0)
+            .saturating_sub(1);
+        if let Mode::InspectPane { scroll_offset, .. } = &mut self.mode {
+            *scroll_offset = (*scroll_offset).min(max);
+        }
+    }
+
+    /// Refresh, but no more often than [`DRAG_REFRESH_INTERVAL`].
+    fn refresh_throttled(&mut self) {
+        let due = self
+            .last_throttled_refresh
+            .is_none_or(|t| t.elapsed() >= DRAG_REFRESH_INTERVAL);
+        if due {
+            self.last_throttled_refresh = Some(Instant::now());
+            let _ = self.refresh_data();
         }
     }
 
@@ -398,6 +476,12 @@ impl App {
                 (m, KeyCode::Char('h') | KeyCode::Char('H') | KeyCode::Left) if m.is_empty() => {
                     Some(Action::NavigateLeft)
                 }
+                // Panes is the rightmost column, so 'l' there is free for the
+                // layout cycle the footer and help advertise. Shift+L stays a
+                // resize; this arm must come before the generic navigation one.
+                (m, KeyCode::Char('l')) if m.is_empty() && self.focus == FocusColumn::Panes => {
+                    Some(Action::NextLayout)
+                }
                 (m, KeyCode::Char('l') | KeyCode::Char('L') | KeyCode::Right) if m.is_empty() => {
                     Some(Action::NavigateRight)
                 }
@@ -412,10 +496,12 @@ impl App {
                     Some(Action::Help)
                 }
                 (KeyModifiers::CONTROL, KeyCode::Char('r') | KeyCode::Char('R')) => {
-                    match self.focus {
-                        FocusColumn::Panes => Some(Action::RespawnPane),
-                        FocusColumn::Sessions | FocusColumn::Windows => Some(Action::Refresh),
-                    }
+                    Some(Action::Refresh)
+                }
+                // Respawn kills whatever the pane is running, so it no longer
+                // shares a key with Refresh and it asks first.
+                (KeyModifiers::CONTROL, KeyCode::Char('x') | KeyCode::Char('X')) => {
+                    Some(Action::PromptRespawnPane)
                 }
                 (KeyModifiers::NONE, KeyCode::F(5)) => Some(Action::Refresh),
                 (KeyModifiers::NONE, KeyCode::Char(' ')) => Some(Action::ToggleInspect),
@@ -442,12 +528,6 @@ impl App {
                     FocusColumn::Panes => Some(Action::PromptNewPane),
                 },
                 // Pane specific shortcuts
-                (m, KeyCode::Char('l') | KeyCode::Char('L'))
-                    if (m.is_empty() || m == KeyModifiers::SHIFT)
-                        && self.focus == FocusColumn::Panes =>
-                {
-                    Some(Action::NextLayout)
-                }
                 (m, KeyCode::Char('s') | KeyCode::Char('S'))
                     if (m.is_empty() || m == KeyModifiers::SHIFT)
                         && self.focus == FocusColumn::Panes =>
@@ -711,13 +791,13 @@ impl App {
                 }
             }
 
-            Mode::ConfirmKill(_) => match (key.modifiers, key.code) {
+            Mode::Confirm(_) => match (key.modifiers, key.code) {
                 (m, KeyCode::Char('y') | KeyCode::Char('Y'))
                     if m.is_empty() || m == KeyModifiers::SHIFT =>
                 {
-                    Some(Action::ConfirmKill)
+                    Some(Action::ConfirmDestructive)
                 }
-                (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::ConfirmKill),
+                (KeyModifiers::NONE, KeyCode::Enter) => Some(Action::ConfirmDestructive),
                 (KeyModifiers::NONE, KeyCode::Esc)
                 | (
                     KeyModifiers::NONE,
@@ -1264,8 +1344,11 @@ impl App {
                 if !q_lower.is_empty()
                     && let Some(pane) = self.selected_window().and_then(|w| w.get_pane(&pane_id))
                 {
-                    let prev_match = if current_offset > 0 {
-                        pane.preview_lines[..current_offset]
+                    // The buffer can shrink between renders, so the stored
+                    // offset is not necessarily a valid index any more.
+                    let upper = current_offset.min(pane.preview_lines.len());
+                    let prev_match = if upper > 0 {
+                        pane.preview_lines[..upper]
                             .iter()
                             .enumerate()
                             .rfind(|(_, line)| line.to_lowercase().contains(&q_lower))
@@ -1317,9 +1400,13 @@ impl App {
             }
 
             Action::ToggleFavorite => {
-                if let Some(s) = self.sessions.get_mut(self.selection.session_idx) {
-                    s.is_favorite = !s.is_favorite;
-                    let msg = if s.is_favorite {
+                let name = self.selected_session().map(|s| s.name.clone());
+                if let Some(name) = name {
+                    let starred = self.favorites.toggle(&name);
+                    if let Some(s) = self.sessions.get_mut(self.selection.session_idx) {
+                        s.is_favorite = starred;
+                    }
+                    let msg = if starred {
                         "Added to favorites"
                     } else {
                         "Removed from favorites"
@@ -1437,18 +1524,6 @@ impl App {
                         {
                             self.selection.window_idx += 1;
                         }
-                        let _ = self.refresh_data();
-                    }
-                }
-            }
-
-            Action::RespawnPane => {
-                if let Some(pane) = self.selected_pane() {
-                    let p_id = pane.id.clone();
-                    if let Err(e) = self.client.respawn_pane(&p_id) {
-                        self.show_toast(format!("Respawn pane failed: {e}"), ToastLevel::Error);
-                    } else {
-                        self.show_toast(format!("Respawned pane {p_id}"), ToastLevel::Success);
                         let _ = self.refresh_data();
                     }
                 }
@@ -1665,79 +1740,38 @@ impl App {
                 self.mode = Mode::Normal;
             }
 
-            Action::PromptKill => match self.focus {
-                FocusColumn::Sessions => {
-                    if let Some(s) = self.selected_session() {
-                        self.mode =
-                            Mode::ConfirmKill(KillTarget::Session(s.id.clone(), s.name.clone()));
-                    }
-                }
-                FocusColumn::Windows => {
-                    if let Some(w) = self.selected_window() {
-                        self.mode =
-                            Mode::ConfirmKill(KillTarget::Window(w.id.clone(), w.name.clone()));
-                    }
-                }
-                FocusColumn::Panes => {
-                    if let Some(p) = self.selected_pane() {
-                        self.mode = Mode::ConfirmKill(KillTarget::Pane(
-                            p.id.clone(),
-                            p.current_command.clone(),
-                        ));
-                    }
-                }
-            },
-
-            Action::ConfirmKill => {
-                if let Mode::ConfirmKill(target) = self.mode.clone() {
-                    match target {
-                        KillTarget::Session(s_id, name) => {
-                            if let Err(e) = self.client.kill_session(&s_id) {
-                                self.show_toast(
-                                    format!("Kill session failed: {e}"),
-                                    ToastLevel::Error,
-                                );
-                            } else {
-                                self.show_toast(
-                                    format!("Killed session '{name}'"),
-                                    ToastLevel::Success,
-                                );
-                                let _ = self.refresh_data();
-                            }
-                        }
-                        KillTarget::Window(w_id, name) => {
-                            if let Err(e) = self.client.kill_window(&w_id) {
-                                self.show_toast(
-                                    format!("Kill window failed: {e}"),
-                                    ToastLevel::Error,
-                                );
-                            } else {
-                                self.show_toast(
-                                    format!("Killed window '{name}'"),
-                                    ToastLevel::Success,
-                                );
-                                let _ = self.refresh_data();
-                            }
-                        }
-                        KillTarget::Pane(p_id, name) => {
-                            if let Err(e) = self.client.kill_pane(&p_id) {
-                                self.show_toast(
-                                    format!("Kill pane failed: {e}"),
-                                    ToastLevel::Error,
-                                );
-                            } else {
-                                self.show_toast(
-                                    format!("Killed pane {p_id} ({name})"),
-                                    ToastLevel::Success,
-                                );
-                                let _ = self.refresh_data();
-                            }
-                        }
-                    }
-                    self.mode = Mode::Normal;
+            Action::PromptKill => {
+                let target = match self.focus {
+                    FocusColumn::Sessions => self
+                        .selected_session()
+                        .map(|s| ConfirmTarget::KillSession(s.id.clone(), s.name.clone())),
+                    FocusColumn::Windows => self
+                        .selected_window()
+                        .map(|w| ConfirmTarget::KillWindow(w.id.clone(), w.name.clone())),
+                    FocusColumn::Panes => self
+                        .selected_pane()
+                        .map(|p| ConfirmTarget::KillPane(p.id.clone(), p.current_command.clone())),
+                };
+                if let Some(target) = target {
+                    return self.confirm_or_apply(target);
                 }
             }
 
+            Action::PromptRespawnPane => {
+                let target = self
+                    .selected_pane()
+                    .map(|p| ConfirmTarget::RespawnPane(p.id.clone(), p.current_command.clone()));
+                if let Some(target) = target {
+                    self.mode = Mode::Confirm(target);
+                }
+            }
+
+            Action::ConfirmDestructive => {
+                if let Mode::Confirm(target) = self.mode.clone() {
+                    self.mode = Mode::Normal;
+                    return self.apply_destructive(target);
+                }
+            }
             Action::PromptNewSession => {
                 self.mode = Mode::PromptNewSession {
                     input: String::new(),
@@ -2080,47 +2114,40 @@ impl App {
                 }
 
                 if let Some((start_col, start_row, pane_id)) = self.mouse_drag_start.clone() {
+                    use crate::tmux::client::ResizeDirection;
                     let dx = column as i32 - start_col as i32;
                     let dy = row as i32 - start_row as i32;
-                    if dx >= 3 {
-                        let _ = self.client.resize_pane(
-                            &pane_id,
-                            crate::tmux::client::ResizeDirection::Right,
-                            dx.unsigned_abs() as usize,
-                        );
-                        self.mouse_drag_start = Some((column, row, pane_id));
-                        let _ = self.refresh_data();
+                    let resize = if dx >= 3 {
+                        Some((ResizeDirection::Right, dx))
                     } else if dx <= -3 {
-                        let _ = self.client.resize_pane(
-                            &pane_id,
-                            crate::tmux::client::ResizeDirection::Left,
-                            dx.unsigned_abs() as usize,
-                        );
-                        self.mouse_drag_start = Some((column, row, pane_id));
-                        let _ = self.refresh_data();
+                        Some((ResizeDirection::Left, dx))
                     } else if dy >= 2 {
-                        let _ = self.client.resize_pane(
-                            &pane_id,
-                            crate::tmux::client::ResizeDirection::Down,
-                            dy.unsigned_abs() as usize,
-                        );
-                        self.mouse_drag_start = Some((column, row, pane_id));
-                        let _ = self.refresh_data();
+                        Some((ResizeDirection::Down, dy))
                     } else if dy <= -2 {
-                        let _ = self.client.resize_pane(
-                            &pane_id,
-                            crate::tmux::client::ResizeDirection::Up,
-                            dy.unsigned_abs() as usize,
-                        );
+                        Some((ResizeDirection::Up, dy))
+                    } else {
+                        None
+                    };
+
+                    if let Some((dir, delta)) = resize {
+                        let _ =
+                            self.client
+                                .resize_pane(&pane_id, dir, delta.unsigned_abs() as usize);
                         self.mouse_drag_start = Some((column, row, pane_id));
-                        let _ = self.refresh_data();
+                        self.refresh_throttled();
                     }
                 }
             }
 
             Action::MouseUp => {
+                let was_dragging =
+                    self.mouse_drag_start.is_some() || self.mouse_drag_col_border.is_some();
                 self.mouse_drag_start = None;
                 self.mouse_drag_col_border = None;
+                // Throttling may have skipped the final drag position.
+                if was_dragging {
+                    let _ = self.refresh_data();
+                }
             }
 
             Action::PromptRenameSession => {
@@ -2146,6 +2173,9 @@ impl App {
                     self.mode = Mode::PromptSendCommand {
                         pane_id: pane.id.clone(),
                         input: String::new(),
+                        // tmux send-keys honours synchronize-panes, so with it on
+                        // the command runs in every pane of the window.
+                        broadcast: self.selected_window().is_some_and(|w| w.synchronized),
                     };
                 }
             }
@@ -2242,12 +2272,16 @@ impl App {
                     Mode::PromptRenameSession { session_id, input } => {
                         let name = sanitize_tmux_name(&input);
                         if !name.is_empty() {
+                            let old_name = self.selected_session().map(|s| s.name.clone());
                             if let Err(e) = self.client.rename_session(&session_id, &name) {
                                 self.show_toast(
                                     format!("Rename session failed: {e}"),
                                     ToastLevel::Error,
                                 );
                             } else {
+                                if let Some(old) = old_name {
+                                    self.favorites.rename(&old, &name);
+                                }
                                 self.show_toast(
                                     format!("Renamed session to '{name}'"),
                                     ToastLevel::Success,
@@ -2280,19 +2314,28 @@ impl App {
                             self.show_toast("Invalid window name".to_string(), ToastLevel::Warning);
                         }
                     }
-                    Mode::PromptSendCommand { pane_id, input } => {
+                    Mode::PromptSendCommand {
+                        pane_id,
+                        input,
+                        broadcast,
+                    } => {
                         let trimmed = input.trim();
+                        let what = if trimmed.is_empty() {
+                            "<Enter>".to_string()
+                        } else {
+                            trimmed.to_string()
+                        };
                         if let Err(e) = self.client.send_keys(&pane_id, trimmed) {
                             self.show_toast(format!("Send failed: {e}"), ToastLevel::Error);
-                        } else if trimmed.is_empty() {
+                        } else if broadcast {
                             self.show_toast(
-                                format!("Sent <Enter> to {}", pane_id.0),
-                                ToastLevel::Success,
+                                format!("Broadcast to ALL panes (sync on): {what}"),
+                                ToastLevel::Warning,
                             );
                             self.refresh_active_window_preview();
                         } else {
                             self.show_toast(
-                                format!("Sent to {}: {trimmed}", pane_id.0),
+                                format!("Sent to {}: {what}", pane_id.0),
                                 ToastLevel::Success,
                             );
                             self.refresh_active_window_preview();
@@ -2316,6 +2359,53 @@ impl App {
             }
         }
 
+        Ok(None)
+    }
+
+    /// Route a kill through the confirmation modal, or straight through when
+    /// the user has turned `confirm_on_kill` off in their config.
+    fn confirm_or_apply(&mut self, target: ConfirmTarget) -> Result<Option<Action>> {
+        if self.config.confirm_on_kill {
+            self.mode = Mode::Confirm(target);
+            Ok(None)
+        } else {
+            self.apply_destructive(target)
+        }
+    }
+
+    fn apply_destructive(&mut self, target: ConfirmTarget) -> Result<Option<Action>> {
+        let (result, ok_message, failure) = match &target {
+            ConfirmTarget::KillSession(id, name) => (
+                self.client.kill_session(id),
+                format!("Killed session '{name}'"),
+                "Kill session failed",
+            ),
+            ConfirmTarget::KillWindow(id, name) => (
+                self.client.kill_window(id),
+                format!("Killed window '{name}'"),
+                "Kill window failed",
+            ),
+            ConfirmTarget::KillPane(id, name) => (
+                self.client.kill_pane(id),
+                format!("Killed pane {id} ({name})"),
+                "Kill pane failed",
+            ),
+            ConfirmTarget::RespawnPane(id, _) => (
+                self.client.respawn_pane(id),
+                format!("Respawned pane {id}"),
+                "Respawn pane failed",
+            ),
+        };
+
+        match result {
+            Err(e) => self.show_toast(format!("{failure}: {e}"), ToastLevel::Error),
+            Ok(()) => {
+                // A killed session keeps its star: favorites are keyed by name,
+                // so recreating the session restores it.
+                self.show_toast(ok_message, ToastLevel::Success);
+                let _ = self.refresh_data();
+            }
+        }
         Ok(None)
     }
 

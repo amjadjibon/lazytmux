@@ -10,6 +10,9 @@ pub struct Window {
     pub active: bool,
     pub layout_str: String,
     pub panes: Vec<Pane>,
+    /// True when tmux `synchronize-panes` is on for this window, meaning input
+    /// sent to one pane is broadcast to every pane in it.
+    pub synchronized: bool,
 }
 
 impl Window {
@@ -29,6 +32,7 @@ impl Window {
             active,
             layout_str,
             panes: Vec::new(),
+            synchronized: false,
         }
     }
 

@@ -69,8 +69,10 @@ pub fn parse_panes(output: &str) -> Vec<(SessionId, WindowId, Pane)> {
             let path = PathBuf::from(fields[6]);
             let width = fields[7].parse::<u16>().unwrap_or(80);
             let height = fields[8].parse::<u16>().unwrap_or(24);
+            // Optional trailing field: older format strings omit it.
+            let synchronized = fields.get(9).is_some_and(|f| *f == "1");
 
-            let pane = Pane::new(
+            let mut pane = Pane::new(
                 pane_id,
                 window_id.clone(),
                 session_id.clone(),
@@ -81,6 +83,7 @@ pub fn parse_panes(output: &str) -> Vec<(SessionId, WindowId, Pane)> {
                 width,
                 height,
             );
+            pane.synchronized = synchronized;
             Some((session_id, window_id, pane))
         })
         .collect()
@@ -113,6 +116,8 @@ pub fn assemble_tree(
             if let Some(p_list) = panes_by_window.remove(&window.id) {
                 window.panes = p_list;
                 window.panes.sort_by_key(|p| p.index);
+                // synchronize-panes is a window option; tmux reports it per pane.
+                window.synchronized = window.panes.iter().any(|p| p.synchronized);
             }
         }
         windows_list.sort_by_key(|w| w.index);
@@ -170,6 +175,23 @@ mod tests {
         assert_eq!(tree[1].name, "dev");
         assert_eq!(tree[1].windows.len(), 1);
         assert_eq!(tree[1].windows[0].panes.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_panes_synchronized_flag() {
+        // Without the trailing field (legacy format) panes are not synchronized.
+        let legacy = "$0\t@1\t%1\t0\t1\tzsh\t/app\t80\t24\n";
+        assert!(!parse_panes(legacy)[0].2.synchronized);
+
+        let sess = parse_sessions("$0\twork\t1\t1\n");
+        let wins = parse_windows("$0\t@1\t1\tweb\t1\t2\t100x50,0,0\n");
+        let panes = parse_panes(
+            "$0\t@1\t%1\t0\t1\tzsh\t/app\t80\t24\t1\n$0\t@1\t%2\t1\t0\tzsh\t/app\t80\t24\t1\n",
+        );
+        assert!(panes[0].2.synchronized);
+
+        let tree = assemble_tree(sess, wins, panes);
+        assert!(tree[0].windows[0].synchronized);
     }
 
     #[test]

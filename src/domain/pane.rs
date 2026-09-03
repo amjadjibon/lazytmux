@@ -1,7 +1,10 @@
 use super::id::{PaneId, SessionId, WindowId};
 use ansi_to_tui::IntoText;
 use ratatui::text::Text;
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
 pub struct Pane {
@@ -17,6 +20,9 @@ pub struct Pane {
     pub height: u16,
     pub preview_lines: Vec<String>,
     pub preview_raw: Vec<u8>,
+    /// tmux `pane_synchronized`: input sent to any pane in this window is
+    /// broadcast to all of them.
+    pub synchronized: bool,
 }
 
 impl Pane {
@@ -46,6 +52,7 @@ impl Pane {
             height,
             preview_lines: Vec::new(),
             preview_raw: Vec::new(),
+            synchronized: false,
         }
     }
 
@@ -92,7 +99,44 @@ impl Pane {
     }
 }
 
+/// How long a resolved branch is reused before the working tree is walked again.
+const GIT_BRANCH_TTL: Duration = Duration::from_secs(5);
+
+type GitBranchCache = Mutex<HashMap<PathBuf, (Option<String>, Instant)>>;
+
+fn git_branch_cache() -> &'static GitBranchCache {
+    static CACHE: OnceLock<GitBranchCache> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Resolve the git branch for a pane's working directory.
+///
+/// `Pane::new` runs for every pane on every refresh, so the uncached walk (up to
+/// 12 `stat`+`open` pairs per pane) would run several times a second on the UI
+/// thread. Results are memoised per path for `GIT_BRANCH_TTL`.
 pub fn detect_git_branch(path: &std::path::Path) -> Option<String> {
+    let mut cache = match git_branch_cache().lock() {
+        Ok(cache) => cache,
+        // A poisoned lock only means some other thread panicked mid-lookup;
+        // fall back to walking rather than propagating the panic.
+        Err(_) => return detect_git_branch_uncached(path),
+    };
+
+    if let Some((branch, fetched_at)) = cache.get(path)
+        && fetched_at.elapsed() < GIT_BRANCH_TTL
+    {
+        return branch.clone();
+    }
+
+    let branch = detect_git_branch_uncached(path);
+    if cache.len() > 512 {
+        cache.retain(|_, (_, fetched_at)| fetched_at.elapsed() < GIT_BRANCH_TTL);
+    }
+    cache.insert(path.to_path_buf(), (branch.clone(), Instant::now()));
+    branch
+}
+
+fn detect_git_branch_uncached(path: &std::path::Path) -> Option<String> {
     use std::io::Read;
     let mut current = path;
     let mut depth = 0;
@@ -109,8 +153,10 @@ pub fn detect_git_branch(path: &std::path::Path) -> Option<String> {
                     let trimmed = content.trim();
                     if let Some(branch) = trimmed.strip_prefix("ref: refs/heads/") {
                         return Some(branch.to_string());
-                    } else if !trimmed.is_empty() && trimmed.len() >= 7 {
-                        return Some(trimmed[..7].to_string());
+                    } else if trimmed.chars().count() >= 7 {
+                        // Detached HEAD: show the short SHA. Cap by characters,
+                        // never by byte index, so a corrupt HEAD cannot panic.
+                        return Some(trimmed.chars().take(7).collect());
                     }
                 }
             }

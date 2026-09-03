@@ -53,11 +53,27 @@ pub fn render_breadcrumbs(app: &App, frame: &mut Frame, area: Rect, theme: &Them
         None => ("-", "-", "-".to_string()),
     };
 
+    // synchronize-panes silently broadcasts input to every pane in the window,
+    // so its state needs to be visible, not just announced by a passing toast.
+    let synchronized = app.selected_window().is_some_and(|w| w.synchronized);
+
     let is_attached = app.selected_session().map(|s| s.attached).unwrap_or(false);
     let attached_span = if is_attached {
         Span::styled(" attached ●", theme.attached_session)
     } else {
         Span::styled(" detached ○", theme.detached_session)
+    };
+
+    let sync_span = if synchronized {
+        Span::styled(
+            "  SYNC ",
+            Style::default()
+                .bg(Color::Yellow)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        )
+    } else {
+        Span::raw("")
     };
 
     let breadcrumb_line = Line::from(vec![
@@ -73,6 +89,7 @@ pub fn render_breadcrumbs(app: &App, frame: &mut Frame, area: Rect, theme: &Them
         Span::styled(p_path, theme.dim),
         Span::raw("   "),
         attached_span,
+        sync_span,
     ]);
 
     let widget = Paragraph::new(breadcrumb_line);
@@ -229,6 +246,11 @@ pub fn render_footer(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
             Span::raw(" resize "),
             Span::styled(" z ", Style::default().bg(Color::DarkGray).fg(Color::White)),
             Span::raw(" zoom "),
+            Span::styled(
+                " ^x ",
+                Style::default().bg(Color::DarkGray).fg(Color::White),
+            ),
+            Span::raw(" respawn "),
             Span::styled(" / ", Style::default().bg(Color::DarkGray).fg(Color::White)),
             Span::raw(" search "),
             Span::styled(" t ", Style::default().bg(Color::DarkGray).fg(Color::White)),
@@ -248,12 +270,15 @@ pub fn render_footer(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
         ],
     };
 
+    // The footer is a single un-wrapped row, so anything at the end is cut off
+    // on a narrow terminal. Toasts are the only channel for errors, so they go
+    // first and the keybinding hints take the truncation instead.
     let mut footer_spans = vec![Span::raw(" ")];
-    footer_spans.extend(hints);
     if !toast_span.content.is_empty() {
-        footer_spans.push(Span::raw("   "));
         footer_spans.push(toast_span);
+        footer_spans.push(Span::raw("  "));
     }
+    footer_spans.extend(hints);
 
     let line = Line::from(footer_spans);
     let widget = Paragraph::new(line).style(theme.dim);

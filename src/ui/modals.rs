@@ -1,4 +1,4 @@
-use crate::app::{App, KillTarget, Mode};
+use crate::app::{App, ConfirmTarget, Mode};
 use crate::ui::theme::Theme;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -8,7 +8,7 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
 
 pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
     match &app.mode {
-        Mode::ConfirmKill(target) => render_confirm_kill(target, frame, area, theme),
+        Mode::Confirm(target) => render_confirm(target, frame, area, theme),
         Mode::PromptNewSession { input } => render_input_prompt(
             "New Session",
             "Enter session name:",
@@ -16,6 +16,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
             frame,
             area,
             theme,
+            false,
         ),
         Mode::PromptNewWindow { input, .. } => render_input_prompt(
             "New Window",
@@ -24,6 +25,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
             frame,
             area,
             theme,
+            false,
         ),
         Mode::PromptNewPane { pane_id } => render_new_pane(pane_id, frame, area, theme),
         Mode::PromptRenameSession { input, .. } => render_input_prompt(
@@ -33,6 +35,7 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
             frame,
             area,
             theme,
+            false,
         ),
         Mode::PromptRenameWindow { input, .. } => render_input_prompt(
             "Rename Window",
@@ -41,15 +44,26 @@ pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
             frame,
             area,
             theme,
+            false,
         ),
-        Mode::PromptSendCommand { pane_id, input } => render_input_prompt(
-            &format!("Send to Pane {}", pane_id.0),
-            "Command / prompt (Enter executes in pane):",
+        Mode::PromptSendCommand {
+            pane_id,
             input,
-            frame,
-            area,
-            theme,
-        ),
+            broadcast,
+        } => {
+            let (title, prompt) = if *broadcast {
+                (
+                    format!("Send to ALL panes (sync on) — {}", pane_id.0),
+                    "synchronize-panes is ON: this runs in EVERY pane of the window.",
+                )
+            } else {
+                (
+                    format!("Send to Pane {}", pane_id.0),
+                    "Command / prompt (Enter executes in pane):",
+                )
+            };
+            render_input_prompt(&title, prompt, input, frame, area, theme, *broadcast)
+        }
         Mode::Help => render_help(frame, area, theme),
         _ => {}
     }
@@ -139,26 +153,30 @@ fn render_new_pane(pane_id: &crate::domain::PaneId, frame: &mut Frame, area: Rec
     frame.render_widget(prompt_widget, chunks[1]);
 }
 
-fn render_confirm_kill(target: &KillTarget, frame: &mut Frame, area: Rect, theme: &Theme) {
+fn render_confirm(target: &ConfirmTarget, frame: &mut Frame, area: Rect, theme: &Theme) {
     let overlay_area = centered_rect(55, 30, area);
     frame.render_widget(Clear, overlay_area);
 
     let (title, message) = match target {
-        KillTarget::Session(id, name) => (
+        ConfirmTarget::KillSession(id, name) => (
             " Kill Session ",
             format!(
                 "Are you sure you want to kill session \"{name}\" ({id})?\nAll windows and running panes will be terminated."
             ),
         ),
-        KillTarget::Window(id, name) => (
+        ConfirmTarget::KillWindow(id, name) => (
             " Kill Window ",
             format!(
                 "Are you sure you want to kill window \"{name}\" ({id})?\nAll panes in this window will be closed."
             ),
         ),
-        KillTarget::Pane(id, cmd) => (
+        ConfirmTarget::KillPane(id, cmd) => (
             " Kill Pane ",
             format!("Are you sure you want to kill pane {id} running \"{cmd}\"?"),
+        ),
+        ConfirmTarget::RespawnPane(id, cmd) => (
+            " Respawn Pane ",
+            format!("Respawn pane {id}?\nThis kills \"{cmd}\" and restarts the pane's command."),
         ),
     };
 
@@ -200,6 +218,7 @@ fn render_confirm_kill(target: &KillTarget, frame: &mut Frame, area: Rect, theme
     frame.render_widget(prompt_widget, chunks[1]);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_input_prompt(
     title: &str,
     prompt: &str,
@@ -207,24 +226,21 @@ fn render_input_prompt(
     frame: &mut Frame,
     area: Rect,
     _theme: &Theme,
+    warn: bool,
 ) {
     let overlay_area = centered_rect(50, 25, area);
     frame.render_widget(Clear, overlay_area);
 
+    // A destructive-by-default prompt is coloured like the kill dialog so it
+    // cannot be mistaken for an ordinary text entry.
+    let accent = if warn { Color::Yellow } else { Color::Cyan };
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )
+        .border_style(Style::default().fg(accent).add_modifier(Modifier::BOLD))
         .title(format!(" {title} "))
-        .title_style(
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        );
+        .title_style(Style::default().fg(accent).add_modifier(Modifier::BOLD));
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -238,7 +254,14 @@ fn render_input_prompt(
 
     frame.render_widget(block, overlay_area);
 
-    let prompt_widget = Paragraph::new(prompt).style(Style::default().fg(Color::Gray));
+    let prompt_style = if warn {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Gray)
+    };
+    let prompt_widget = Paragraph::new(prompt).style(prompt_style);
     frame.render_widget(prompt_widget, chunks[0]);
 
     let input_box = Block::default()
@@ -263,7 +286,7 @@ fn render_input_prompt(
         Span::styled(
             " Enter ",
             Style::default()
-                .bg(Color::Cyan)
+                .bg(accent)
                 .fg(Color::Black)
                 .add_modifier(Modifier::BOLD),
         ),
@@ -310,7 +333,7 @@ fn render_help(frame: &mut Frame, area: Rect, theme: &Theme) {
         )]),
         Line::from(vec![
             Span::styled("  h / l, ← / →, Tab     ", Style::default().fg(Color::Cyan)),
-            Span::raw("Switch column focus (Sessions, Windows, Panes)"),
+            Span::raw("Switch column focus (in Panes, 'l' cycles layout instead)"),
         ]),
         Line::from(vec![
             Span::styled("  j / k, ↓ / ↑          ", Style::default().fg(Color::Cyan)),
@@ -325,7 +348,7 @@ fn render_help(frame: &mut Frame, area: Rect, theme: &Theme) {
             Span::raw("Global fuzzy search (sessions, windows, panes)"),
         ]),
         Line::from(vec![
-            Span::styled("  r                     ", Style::default().fg(Color::Cyan)),
+            Span::styled("  F5 / Ctrl+r           ", Style::default().fg(Color::Cyan)),
             Span::raw("Force refresh tmux state"),
         ]),
         Line::from(vec![
@@ -393,7 +416,7 @@ fn render_help(frame: &mut Frame, area: Rect, theme: &Theme) {
                 "  :                     ",
                 Style::default().fg(Color::Yellow),
             ),
-            Span::raw("Send command / keystrokes direct to background pane"),
+            Span::raw("Send command / keystrokes direct to background pane, then Enter"),
         ]),
         Line::from(vec![
             Span::styled(
@@ -404,11 +427,11 @@ fn render_help(frame: &mut Frame, area: Rect, theme: &Theme) {
         ]),
         Line::from(vec![
             Span::styled("  l                     ", Style::default().fg(Color::Cyan)),
-            Span::raw("Cycle layout preset (even-h, even-v, main-h, main-v, tiled)"),
+            Span::raw("Cycle layout preset (Panes column only: even-h, even-v, tiled, ...)"),
         ]),
         Line::from(vec![
             Span::styled("  s                     ", Style::default().fg(Color::Cyan)),
-            Span::raw("Toggle synchronize-panes (broadcast typing to all panes)"),
+            Span::raw("Toggle synchronize-panes — while ON, ':' broadcasts to ALL panes"),
         ]),
         Line::from(vec![
             Span::styled("  [ / ]                 ", Style::default().fg(Color::Cyan)),
@@ -436,8 +459,8 @@ fn render_help(frame: &mut Frame, area: Rect, theme: &Theme) {
             Span::raw("Drag pane to resize, or click [◀][▼][▲][▶][↕ swap] controls"),
         ]),
         Line::from(vec![
-            Span::styled("  Ctrl + r              ", Style::default().fg(Color::Cyan)),
-            Span::raw("Respawn pane process (restart crashed shell)"),
+            Span::styled("  Ctrl + x              ", Style::default().fg(Color::Red)),
+            Span::raw("Respawn pane process — kills what is running (with confirm)"),
         ]),
         Line::from(vec![
             Span::styled(

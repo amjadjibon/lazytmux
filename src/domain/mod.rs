@@ -7,7 +7,7 @@ pub mod window;
 
 pub use id::{PaneId, SessionId, WindowId};
 pub use layout::{LayoutNode, LayoutSplit};
-pub use pane::Pane;
+pub use pane::{Pane, detect_git_branch};
 pub use sanitizer::sanitize_tmux_name;
 pub use session::Session;
 pub use window::Window;

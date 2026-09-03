@@ -30,11 +30,13 @@ impl MockTmuxClient {
 
     fn populate_mock_data(&mut self) {
         // -------------------------------------------------------------
-        // Session 1: "work" (Active Workspace, Favorited)
+        // Session 1: "work" (Active Workspace)
         // -------------------------------------------------------------
+        // is_favorite is not set here: favorites are owned by
+        // `crate::favorites::Favorites`, not by the tmux tree, and any value
+        // set on the tree is overwritten on the next refresh.
         let s1_id = SessionId::from("$1");
         let mut s1 = Session::new(s1_id.clone(), "work".to_string(), 4, true);
-        s1.is_favorite = true;
 
         // Window 1.1: "editor" (Active window, 2 panes: nvim + cargo test)
         let w1_id = WindowId::from("@1");

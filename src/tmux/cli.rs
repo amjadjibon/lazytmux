@@ -56,7 +56,7 @@ impl TmuxClient for CliTmuxClient {
     }
 
     fn list_panes(&self, window: &WindowId) -> Result<Vec<Pane>> {
-        let fmt = "#{session_id}\t#{window_id}\t#{pane_id}\t#{pane_index}\t#{pane_active}\t#{pane_current_command}\t#{pane_current_path}\t#{pane_width}\t#{pane_height}";
+        let fmt = "#{session_id}\t#{window_id}\t#{pane_id}\t#{pane_index}\t#{pane_active}\t#{pane_current_command}\t#{pane_current_path}\t#{pane_width}\t#{pane_height}\t#{?pane_synchronized,1,0}";
         let output = self.run_cmd(&["list-panes", "-t", &window.0, "-F", fmt])?;
         let panes = parse_panes(&output)
             .into_iter()
@@ -88,7 +88,7 @@ impl TmuxClient for CliTmuxClient {
         let win_out = self.run_cmd(&["list-windows", "-a", "-F", win_fmt])?;
         let windows = parse_windows(&win_out);
 
-        let pane_fmt = "#{session_id}\t#{window_id}\t#{pane_id}\t#{pane_index}\t#{pane_active}\t#{pane_current_command}\t#{pane_current_path}\t#{pane_width}\t#{pane_height}";
+        let pane_fmt = "#{session_id}\t#{window_id}\t#{pane_id}\t#{pane_index}\t#{pane_active}\t#{pane_current_command}\t#{pane_current_path}\t#{pane_width}\t#{pane_height}\t#{?pane_synchronized,1,0}";
         let pane_out = self.run_cmd(&["list-panes", "-a", "-F", pane_fmt])?;
         let panes = parse_panes(&pane_out);
 

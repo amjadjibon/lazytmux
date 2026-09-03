@@ -105,17 +105,18 @@ bind-key C-s display-popup -E -w 80% -h 80% "lazytmux"
 | `n` | **Windows** | Create new window in selected session |
 | `n` | **Panes** | Create new split pane (`v` for vertical, `h` for horizontal) |
 | `r` / `R` / `F2` | **Sessions / Windows** | Rename active session or window |
-| `l` | **Panes** | Cycle layout preset (`even-h`, `even-v`, `main-h`, `main-v`, `tiled`) |
-| `s` | **Panes** | Toggle `synchronize-panes` (broadcast typing to all panes) |
+| `l` | **Panes** | Cycle layout preset (`even-h`, `even-v`, `main-h`, `main-v`, `tiled`). In other columns `l` moves focus right |
+| `s` | **Panes** | Toggle `synchronize-panes` (broadcast typing to all panes). While ON a `SYNC` badge shows in the breadcrumb bar and `:` sends to **every** pane in the window |
 | `+` / `-` | **Panes** | **Resize pane vertically** (grow / shrink) |
 | `Shift + ←/→/↑/↓` | **Panes** | **Resize pane in 4 directions** (Left/Right/Up/Down) |
 | `H` / `J` / `K` / `L` | **Panes** | **Vim-style pane resizing** |
 | Mouse Drag | **Panes** | **Click and drag inside pane or click `[◀][▼][▲][▶][↕ swap]` controls** |
 | `[` / `]` | **Panes** | Swap pane position up / down (`swap-pane -U / -D`) |
 | `[` / `]` | **Windows** | Move window position left / right (`swap-window`) |
-| `Ctrl + r` | **Panes** | Respawn pane process (restart hung/crashed shell) |
+| `Ctrl + x` | **Panes** | Respawn pane process — kills what is running, asks for confirmation |
+| `Ctrl + r` / `F5` | **Any column** | Force refresh tmux state |
 | `x` | **Any column** | Kill selected session, window, or pane (with confirmation) |
-| `f` | **Sessions** | Toggle session favorite bookmark (`★`) |
+| `f` | **Sessions** | Toggle session favorite bookmark (`★`), persisted to `favorites.txt` next to the config |
 | `c` | **Panes / Inspect** | Copy captured pane buffer to system clipboard |
 
 ### Inspect / Zoom Mode (`z` / `Space`)
@@ -137,7 +138,7 @@ bind-key C-s display-popup -E -w 80% -h 80% "lazytmux"
 
 ## ⚙️ Configuration
 
-LazyTmux looks for an optional configuration file at `~/.config/lazytmux/config.toml` (or `$XDG_CONFIG_HOME/lazytmux/config.toml`):
+LazyTmux looks for an optional configuration file at `$XDG_CONFIG_HOME/lazytmux/config.toml`, falling back to `~/.config/lazytmux/config.toml` on every platform (an existing config in the OS-specific application directory is still honoured):
 
 ```toml
 # Refresh interval for polling live tmux state (in milliseconds)

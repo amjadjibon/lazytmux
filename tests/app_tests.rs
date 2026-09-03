@@ -49,7 +49,8 @@ fn test_app_initialization_with_mock() {
 
     let session = app.selected_session().expect("Session should exist");
     assert_eq!(session.name, "work");
-    assert!(session.is_favorite);
+    // Favorites come from the persisted store, not from tmux.
+    assert!(!session.is_favorite);
 
     let window = app.selected_window().expect("Window should exist");
     assert_eq!(window.name, "editor");
@@ -262,16 +263,16 @@ fn test_toggle_favorite() {
     let mock = Box::new(MockTmuxClient::new());
     let mut app = App::new(mock, Config::default(), true);
 
-    // Initial state: session 0 ("work") is favorite
-    assert!(app.selected_session().unwrap().is_favorite);
+    // Favorites start empty: mock mode uses an ephemeral store.
+    assert!(!app.selected_session().unwrap().is_favorite);
 
     // Toggle favorite
     app.update(Action::ToggleFavorite).unwrap();
-    assert!(!app.selected_session().unwrap().is_favorite);
+    assert!(app.selected_session().unwrap().is_favorite);
 
     // Toggle back
     app.update(Action::ToggleFavorite).unwrap();
-    assert!(app.selected_session().unwrap().is_favorite);
+    assert!(!app.selected_session().unwrap().is_favorite);
 }
 
 #[test]
@@ -894,5 +895,322 @@ fn test_mouse_double_click_triggers_enter() {
             row: 5,
             double_click: true,
         })
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Regression tests for the code-review fixes.
+// ---------------------------------------------------------------------------
+
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+fn make_app() -> App {
+    App::new(Box::new(MockTmuxClient::new()), Config::default(), true)
+}
+
+/// A byte-index length cap used to split multi-byte names mid-character and
+/// panic. `PromptRenameSession` pre-fills the existing name, so any session
+/// named with >21 CJK characters crashed on rename.
+#[test]
+fn test_submitting_multibyte_name_does_not_panic() {
+    for filler in ["日", "🚀", "é"] {
+        let mut app = make_app();
+        app.mode = Mode::PromptRenameSession {
+            session_id: lazytmux::domain::SessionId::from("$1"),
+            input: filler.repeat(40),
+        };
+        app.update(Action::ModalSubmit)
+            .expect("submit must not fail");
+        assert_eq!(app.mode, Mode::Normal);
+
+        let mut app = make_app();
+        app.mode = Mode::PromptNewSession {
+            input: filler.repeat(40),
+        };
+        app.update(Action::ModalSubmit)
+            .expect("submit must not fail");
+    }
+}
+
+/// Inspect mode holds a deep buffer plus an offset into it. A periodic preview
+/// refresh must not leave the offset pointing past the end of a shorter buffer.
+#[test]
+fn test_inspect_offset_survives_shrinking_buffer() {
+    let mut app = make_app();
+    let deep: Vec<String> = (0..300).map(|i| format!("needle line {i}")).collect();
+    {
+        let w = app.sessions[0].windows.get_mut(0).unwrap();
+        w.panes[0].set_preview(deep.join("\n").into_bytes());
+    }
+    let pane_id = app.sessions[0].windows[0].panes[0].id.clone();
+    app.mode = Mode::InspectPane {
+        pane_id,
+        scroll_offset: 250,
+        search_query: Some("needle".to_string()),
+        is_searching: false,
+    };
+
+    // The pane is cleared underneath us.
+    {
+        let w = app.sessions[0].windows.get_mut(0).unwrap();
+        w.panes[0].set_preview(b"needle line 0\nneedle line 1".to_vec());
+    }
+
+    app.update(Action::InspectSearchPrev)
+        .expect("must not panic");
+    app.update(Action::InspectSearchNext)
+        .expect("must not panic");
+    app.update(Action::InspectScrollDown(5))
+        .expect("must not panic");
+    if let Mode::InspectPane { scroll_offset, .. } = app.mode {
+        assert!(
+            scroll_offset < 2,
+            "offset {scroll_offset} escaped the buffer"
+        );
+    } else {
+        panic!("should still be in inspect mode");
+    }
+}
+
+/// A tick refresh used to replace Inspect mode's deep capture with the short
+/// preview capture, collapsing the scrollback the user was reading.
+#[test]
+fn test_tick_keeps_inspect_scrollback_depth() {
+    let mut app = make_app();
+    app.focus = FocusColumn::Panes;
+    app.update(Action::ToggleInspect).unwrap();
+    let inspected = match &app.mode {
+        Mode::InspectPane { pane_id, .. } => pane_id.clone(),
+        _ => panic!("expected inspect mode"),
+    };
+    let before = app
+        .selected_window()
+        .and_then(|w| w.get_pane(&inspected))
+        .map(|p| p.preview_lines.len())
+        .unwrap();
+
+    app.update(Action::Tick).unwrap();
+
+    let after = app
+        .selected_window()
+        .and_then(|w| w.get_pane(&inspected))
+        .map(|p| p.preview_lines.len())
+        .unwrap();
+    assert_eq!(before, after, "tick shrank the inspect buffer");
+}
+
+/// The footer advertises `l` as the layout cycle in the Panes column.
+#[test]
+fn test_l_cycles_layout_in_panes_and_navigates_elsewhere() {
+    let mut app = make_app();
+
+    app.focus = FocusColumn::Panes;
+    assert_eq!(
+        app.handle_key_event(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE)),
+        Some(Action::NextLayout)
+    );
+
+    app.focus = FocusColumn::Sessions;
+    assert_eq!(
+        app.handle_key_event(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE)),
+        Some(Action::NavigateRight)
+    );
+
+    // Shift+L is a resize again, not a second layout binding.
+    app.focus = FocusColumn::Panes;
+    assert_eq!(
+        app.handle_key_event(KeyEvent::new(KeyCode::Char('L'), KeyModifiers::SHIFT)),
+        Some(Action::ResizePane(
+            lazytmux::tmux::client::ResizeDirection::Right,
+            4
+        ))
+    );
+}
+
+/// Ctrl+R meant "refresh" in two columns and "kill and restart the pane's
+/// process" in the third. Refresh is now unconditional; respawn has its own key
+/// and a confirmation step.
+#[test]
+fn test_respawn_requires_confirmation_and_ctrl_r_always_refreshes() {
+    let mut app = make_app();
+    for focus in [
+        FocusColumn::Sessions,
+        FocusColumn::Windows,
+        FocusColumn::Panes,
+    ] {
+        app.focus = focus;
+        assert_eq!(
+            app.handle_key_event(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)),
+            Some(Action::Refresh)
+        );
+    }
+
+    app.focus = FocusColumn::Panes;
+    assert_eq!(
+        app.handle_key_event(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL)),
+        Some(Action::PromptRespawnPane)
+    );
+    app.update(Action::PromptRespawnPane).unwrap();
+    assert!(matches!(
+        app.mode,
+        Mode::Confirm(lazytmux::app::ConfirmTarget::RespawnPane(..))
+    ));
+
+    // Escaping the modal must not respawn anything.
+    app.update(Action::CancelModal).unwrap();
+    assert_eq!(app.mode, Mode::Normal);
+}
+
+/// `confirm_on_kill = false` was parsed, documented, and never read.
+#[test]
+fn test_confirm_on_kill_false_skips_the_modal() {
+    let config = lazytmux::config::Config {
+        confirm_on_kill: false,
+        ..Default::default()
+    };
+    let mut app = App::new(Box::new(MockTmuxClient::new()), config, true);
+    app.focus = FocusColumn::Windows;
+    let before = app.selected_session().unwrap().windows.len();
+
+    app.update(Action::PromptKill).unwrap();
+
+    assert_eq!(app.mode, Mode::Normal, "modal should have been skipped");
+    assert_eq!(app.selected_session().unwrap().windows.len(), before - 1);
+}
+
+/// Favorites live outside the tmux tree, so a refresh must not clear them.
+#[test]
+fn test_favorite_survives_refresh() {
+    let mut app = make_app();
+    let name = app.selected_session().unwrap().name.clone();
+    let starred_before = app.selected_session().unwrap().is_favorite;
+
+    app.update(Action::ToggleFavorite).unwrap();
+    let starred = app.selected_session().unwrap().is_favorite;
+    assert_ne!(starred, starred_before);
+    assert_eq!(app.favorites.contains(&name), starred);
+
+    app.update(Action::Refresh).unwrap();
+    assert_eq!(
+        app.selected_session().unwrap().is_favorite,
+        starred,
+        "refresh discarded the favorite"
+    );
+}
+
+/// With synchronize-panes on, tmux send-keys broadcasts to every pane in the
+/// window, so the prompt has to say so.
+#[test]
+fn test_send_prompt_flags_broadcast_when_synchronized() {
+    let mut app = make_app();
+    app.focus = FocusColumn::Panes;
+
+    app.update(Action::PromptSendCommand).unwrap();
+    assert!(matches!(
+        app.mode,
+        Mode::PromptSendCommand {
+            broadcast: false,
+            ..
+        }
+    ));
+    app.update(Action::CancelModal).unwrap();
+
+    app.sessions[0].windows[0].synchronized = true;
+    app.update(Action::PromptSendCommand).unwrap();
+    assert!(matches!(
+        app.mode,
+        Mode::PromptSendCommand {
+            broadcast: true,
+            ..
+        }
+    ));
+
+    app.update(Action::ModalSubmit).unwrap();
+    let toast = app.toasts.last().unwrap();
+    assert!(toast.message.contains("ALL panes"), "got {}", toast.message);
+    assert_eq!(toast.level, lazytmux::action::ToastLevel::Warning);
+}
+
+/// tmux `send-keys` honours `synchronize-panes`, so the flag must be read back
+/// from a real server, not just from the mock.
+#[test]
+fn test_live_synchronized_flag_round_trip() {
+    use lazytmux::tmux::{CliTmuxClient, TmuxClient};
+    use std::process::Command;
+
+    if Command::new("tmux").arg("-V").output().is_err() {
+        println!("tmux CLI not available, skipping live test");
+        return;
+    }
+
+    let session = "lazytmux_ci_sync_test";
+    let _ = Command::new("tmux")
+        .args(["new-session", "-d", "-s", session, "-n", "syncwin"])
+        .output();
+    let _ = Command::new("tmux")
+        .args(["split-window", "-t", session])
+        .output();
+
+    let client = CliTmuxClient::new();
+    let unsynced = client.fetch_full_tree().ok().and_then(|tree| {
+        tree.iter()
+            .find(|s| s.name == session)
+            .and_then(|s| s.windows.first().map(|w| w.synchronized))
+    });
+
+    let _ = Command::new("tmux")
+        .args([
+            "set-window-option",
+            "-t",
+            session,
+            "synchronize-panes",
+            "on",
+        ])
+        .output();
+
+    let synced = client.fetch_full_tree().ok().and_then(|tree| {
+        tree.iter()
+            .find(|s| s.name == session)
+            .and_then(|s| s.windows.first().map(|w| w.synchronized))
+    });
+
+    let _ = Command::new("tmux")
+        .args(["kill-session", "-t", session])
+        .output();
+
+    assert_eq!(
+        unsynced,
+        Some(false),
+        "window reported sync before it was on"
+    );
+    assert_eq!(synced, Some(true), "sync-panes was not detected");
+}
+
+/// `Pane::new` runs for every pane on every refresh; the branch lookup behind it
+/// walks the working tree. It must be memoised, not repeated per refresh.
+#[test]
+fn test_git_branch_lookup_is_cached() {
+    use lazytmux::domain::pane::detect_git_branch;
+    use std::path::PathBuf;
+    use std::time::Instant;
+
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let deep = repo.join("src").join("ui");
+
+    // Warm the cache, then time a large number of repeat lookups.
+    let first = detect_git_branch(&deep);
+    assert!(first.is_some(), "test must run inside the repo");
+
+    let start = Instant::now();
+    for _ in 0..5_000 {
+        assert_eq!(detect_git_branch(&deep), first);
+    }
+    let elapsed = start.elapsed();
+
+    // 5,000 uncached walks would be 5,000 * (up to 12 stat + an open). Cached
+    // lookups are a hash probe; anything near the uncached cost fails here.
+    assert!(
+        elapsed.as_millis() < 100,
+        "5000 cached lookups took {elapsed:?} — cache is not being hit"
     );
 }

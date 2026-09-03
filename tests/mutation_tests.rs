@@ -1,5 +1,5 @@
 use lazytmux::action::Action;
-use lazytmux::app::{App, KillTarget, Mode};
+use lazytmux::app::{App, ConfirmTarget, Mode};
 use lazytmux::config::Config;
 use lazytmux::domain::SessionId;
 use lazytmux::tmux::MockTmuxClient;
@@ -64,7 +64,7 @@ fn test_kill_session_with_confirmation() {
     // Trigger prompt kill on first session ("work")
     app.update(Action::PromptKill).unwrap();
     match &app.mode {
-        Mode::ConfirmKill(KillTarget::Session(id, name)) => {
+        Mode::Confirm(ConfirmTarget::KillSession(id, name)) => {
             assert_eq!(id.0, "$1");
             assert_eq!(name, "work");
         }
@@ -78,7 +78,7 @@ fn test_kill_session_with_confirmation() {
 
     // Prompt kill and confirm
     app.update(Action::PromptKill).unwrap();
-    app.update(Action::ConfirmKill).unwrap();
+    app.update(Action::ConfirmDestructive).unwrap();
 
     assert_eq!(app.mode, Mode::Normal);
     assert_eq!(app.sessions.len(), initial_count - 1);
@@ -177,11 +177,11 @@ fn test_kill_window_with_confirmation() {
     app.update(Action::PromptKill).unwrap();
     assert!(matches!(
         app.mode,
-        Mode::ConfirmKill(KillTarget::Window(..))
+        Mode::Confirm(ConfirmTarget::KillWindow(..))
     ));
 
     // Confirm kill
-    app.update(Action::ConfirmKill).unwrap();
+    app.update(Action::ConfirmDestructive).unwrap();
     assert_eq!(app.mode, Mode::Normal);
     assert_eq!(
         app.selected_session().unwrap().windows.len(),
@@ -199,10 +199,13 @@ fn test_kill_pane_with_confirmation() {
 
     // Trigger prompt kill
     app.update(Action::PromptKill).unwrap();
-    assert!(matches!(app.mode, Mode::ConfirmKill(KillTarget::Pane(..))));
+    assert!(matches!(
+        app.mode,
+        Mode::Confirm(ConfirmTarget::KillPane(..))
+    ));
 
     // Confirm kill
-    app.update(Action::ConfirmKill).unwrap();
+    app.update(Action::ConfirmDestructive).unwrap();
     assert_eq!(app.mode, Mode::Normal);
     assert_eq!(
         app.selected_window().unwrap().panes.len(),
@@ -216,7 +219,15 @@ fn test_respawn_pane() {
     let mut app = App::new(mock, Config::default(), true);
     app.focus = lazytmux::app::FocusColumn::Panes;
 
-    app.update(Action::RespawnPane).unwrap();
+    // Respawn kills the running process, so it goes through the confirm modal.
+    app.update(Action::PromptRespawnPane).unwrap();
+    assert!(matches!(
+        app.mode,
+        Mode::Confirm(ConfirmTarget::RespawnPane(..))
+    ));
+
+    app.update(Action::ConfirmDestructive).unwrap();
+    assert_eq!(app.mode, Mode::Normal);
     assert!(
         app.toasts
             .last()
