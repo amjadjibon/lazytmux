@@ -35,7 +35,7 @@ pub trait TmuxClient: Send + Sync {
     fn swap_window(&mut self, window: &WindowId, left: bool) -> Result<()>;
     fn respawn_pane(&mut self, pane: &PaneId) -> Result<()>;
     fn send_keys(&mut self, pane: &PaneId, keys: &str) -> Result<()>;
-    fn send_keys_ext(&mut self, pane: &PaneId, keys: &str, _with_enter: bool) -> Result<()> {
+    fn send_keys_with_enter(&mut self, pane: &PaneId, keys: &str) -> Result<()> {
         self.send_keys(pane, keys)
     }
     fn break_pane(&mut self, pane: &PaneId) -> Result<()>;
