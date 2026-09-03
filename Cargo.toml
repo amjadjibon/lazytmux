@@ -14,6 +14,9 @@ categories = ["command-line-utilities"]
 [dependencies]
 # UI & Terminal
 ratatui = "0.30"
+# Column widths for the pane-card control strip must match what ratatui draws,
+# so hit-testing uses the same width rules as rendering.
+unicode-width = "0.2"
 crossterm = "0.29"
 ansi-to-tui = "8.0"
 

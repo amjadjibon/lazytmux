@@ -1,3 +1,4 @@
+use crate::action::Action;
 use crate::app::{App, FocusColumn};
 use crate::domain::{LayoutNode, LayoutSplit, Pane, Window};
 use crate::ui::theme::Theme;
@@ -111,6 +112,141 @@ fn render_layout_node(
     }
 }
 
+/// A clickable control drawn on the bottom border of the selected pane card.
+///
+/// The strip is built once here and used for both drawing and hit-testing, so
+/// the two can never drift apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaneControl {
+    ResizeLeft,
+    ResizeDown,
+    ResizeUp,
+    ResizeRight,
+    Swap,
+    /// Split into stacked panes, one above the other.
+    SplitStacked,
+    /// Split into side-by-side panes.
+    SplitSideBySide,
+    Kill,
+}
+
+impl PaneControl {
+    pub fn label(self) -> &'static str {
+        match self {
+            PaneControl::ResizeLeft => "[◀]",
+            PaneControl::ResizeDown => "[▼]",
+            PaneControl::ResizeUp => "[▲]",
+            PaneControl::ResizeRight => "[▶]",
+            PaneControl::Swap => "[↕]",
+            // Each glyph is the resulting layout, shaded: bottom half for a
+            // stacked split, left half for a side-by-side one.
+            PaneControl::SplitStacked => "[⬓]",
+            PaneControl::SplitSideBySide => "[◧]",
+            PaneControl::Kill => "[x]",
+        }
+    }
+
+    pub fn action(self) -> Action {
+        use crate::tmux::client::ResizeDirection;
+        match self {
+            PaneControl::ResizeLeft => Action::ResizePane(ResizeDirection::Left, 4),
+            PaneControl::ResizeDown => Action::ResizePane(ResizeDirection::Down, 2),
+            PaneControl::ResizeUp => Action::ResizePane(ResizeDirection::Up, 2),
+            PaneControl::ResizeRight => Action::ResizePane(ResizeDirection::Right, 4),
+            PaneControl::Swap => Action::SwapPaneDown,
+            PaneControl::SplitStacked => Action::SplitPane { vertical: false },
+            PaneControl::SplitSideBySide => Action::SplitPane { vertical: true },
+            // Goes through the normal kill path, so it obeys `confirm_on_kill`
+            // and asks before destroying anything.
+            PaneControl::Kill => Action::PromptKill,
+        }
+    }
+}
+
+const ALL_CONTROLS: &[PaneControl] = &[
+    PaneControl::ResizeLeft,
+    PaneControl::ResizeDown,
+    PaneControl::ResizeUp,
+    PaneControl::ResizeRight,
+    PaneControl::Swap,
+    PaneControl::SplitStacked,
+    PaneControl::SplitSideBySide,
+    PaneControl::Kill,
+];
+
+/// Splitting and closing stay available on the narrowest cards that show
+/// anything at all; resizing has keyboard and drag equivalents.
+const ESSENTIAL_CONTROLS: &[PaneControl] = &[
+    PaneControl::SplitStacked,
+    PaneControl::SplitSideBySide,
+    PaneControl::Kill,
+];
+
+/// The control strip for a card of a given width: what to draw, and which
+/// column each control occupies.
+#[derive(Debug, Clone)]
+pub struct ControlStrip {
+    label: String,
+    hits: Vec<(u16, u16, PaneControl)>,
+}
+
+impl ControlStrip {
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+
+    /// The control at `col_offset` columns from the card's left edge, if any.
+    pub fn control_at(&self, col_offset: u16) -> Option<PaneControl> {
+        self.hits
+            .iter()
+            .find(|(start, end, _)| col_offset >= *start && col_offset < *end)
+            .map(|(_, _, control)| *control)
+    }
+}
+
+/// Build the widest control strip that fits a card `width` columns across, or
+/// `None` when even the smallest set would not fit.
+pub fn control_strip(width: u16) -> Option<ControlStrip> {
+    use unicode_width::UnicodeWidthStr;
+
+    let (controls, separator) = if width >= 36 {
+        (ALL_CONTROLS, " ")
+    } else if width >= 28 {
+        (ALL_CONTROLS, "")
+    } else if width >= 14 {
+        (ESSENTIAL_CONTROLS, "")
+    } else {
+        return None;
+    };
+
+    // A left-aligned bottom title starts one column in, past the corner.
+    let mut column: u16 = 1;
+    let mut label = String::from(" ");
+    column += 1;
+
+    let mut hits = Vec::with_capacity(controls.len());
+    for (idx, control) in controls.iter().enumerate() {
+        if idx > 0 {
+            label.push_str(separator);
+            column += separator.width() as u16;
+        }
+        // Always keep the destructive control clear of its neighbour.
+        if *control == PaneControl::Kill && separator.is_empty() {
+            label.push(' ');
+            column += 1;
+        }
+
+        let text = control.label();
+        let text_width = text.width() as u16;
+        label.push_str(text);
+        hits.push((column, column + text_width, *control));
+        column += text_width;
+    }
+    label.push(' ');
+
+    Some(ControlStrip { label, hits })
+}
+
 fn render_pane_card(
     pane: &Pane,
     window: &Window,
@@ -155,12 +291,14 @@ fn render_pane_card(
             app.theme.title
         });
 
-    if is_selected && area.height >= 4 {
-        if area.width >= 35 {
-            pane_block = pane_block.title_bottom(" [◀] [▼] [▲] [▶] [↕ swap] ");
-        } else if area.width >= 20 {
-            pane_block = pane_block.title_bottom(" [◀][▼][▲][▶] ");
-        }
+    // Controls are drawn only on the selected card, and `App` only hit-tests a
+    // card that was already selected, so a click can never hit a button that
+    // was not on screen.
+    if is_selected
+        && area.height >= 4
+        && let Some(strip) = control_strip(area.width)
+    {
+        pane_block = pane_block.title_bottom(strip.label().to_string());
     }
 
     // Only the bottom `inner_height` lines are ever on screen; the rest were

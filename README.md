@@ -110,7 +110,11 @@ bind-key C-s display-popup -E -w 80% -h 80% "lazytmux"
 | `+` / `-` | **Panes** | **Resize pane vertically** (grow / shrink) |
 | `Shift + ←/→/↑/↓` | **Panes** | **Resize pane in 4 directions** (Left/Right/Up/Down) |
 | `H` / `J` / `K` / `L` | **Panes** | **Vim-style pane resizing** |
-| Mouse Drag | **Panes** | **Click and drag inside pane or click `[◀][▼][▲][▶][↕ swap]` controls** |
+| Mouse Drag | **Panes** | **Click and drag inside pane to resize** |
+| `[◀] [▼] [▲] [▶]` | **Panes** | Click the selected card's border buttons to resize |
+| `[↕]` | **Panes** | Click to swap the pane down |
+| `[⬓]` / `[◧]` | **Panes** | **Click to split the pane** — `[⬓]` stacked, `[◧]` side by side |
+| `[x]` | **Panes** | **Click to close the pane** (asks for confirmation first) |
 | `[` / `]` | **Panes** | Swap pane position up / down (`swap-pane -U / -D`) |
 | `[` / `]` | **Windows** | Move window position left / right (`swap-window`) |
 | `Ctrl + x` | **Panes** | Respawn pane process — kills what is running, asks for confirmation |

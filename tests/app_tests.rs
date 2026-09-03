@@ -1367,3 +1367,403 @@ fn test_apply_tree_keeps_previews_the_poller_did_not_capture() {
         "preview was blanked between poller passes"
     );
 }
+
+/// The control strip is drawn and hit-tested from one definition, so every
+/// button must be clickable exactly where it is painted. This renders a real
+/// pane card and checks each control against the actual terminal buffer.
+#[test]
+fn test_pane_control_hitboxes_match_what_is_drawn() {
+    use lazytmux::ui::panes::{PaneControl, control_strip};
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::widgets::Block;
+
+    for width in [14u16, 20, 28, 40, 60] {
+        let Some(strip) = control_strip(width) else {
+            continue;
+        };
+        let mut terminal = Terminal::new(TestBackend::new(width, 3)).unwrap();
+        terminal
+            .draw(|f| {
+                f.render_widget(
+                    Block::bordered().title_bottom(strip.label().to_string()),
+                    f.area(),
+                );
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let bottom: String = (0..width).map(|x| buffer[(x, 2)].symbol()).collect();
+
+        for control in [
+            PaneControl::ResizeLeft,
+            PaneControl::ResizeDown,
+            PaneControl::ResizeUp,
+            PaneControl::ResizeRight,
+            PaneControl::Swap,
+            PaneControl::SplitStacked,
+            PaneControl::SplitSideBySide,
+            PaneControl::Kill,
+        ] {
+            // Where does the rendered row actually show this button?
+            let Some(byte_idx) = bottom.find(control.label()) else {
+                continue;
+            };
+            let column = bottom[..byte_idx].chars().count() as u16;
+            for offset in 0..3u16 {
+                assert_eq!(
+                    strip.control_at(column + offset),
+                    Some(control),
+                    "width {width}: column {} of {:?} is painted with {:?} but hit-tests wrong\nrow: {bottom:?}",
+                    column + offset,
+                    control.label(),
+                    control
+                );
+            }
+        }
+    }
+}
+
+/// Every card wide enough to show anything shows split and close.
+#[test]
+fn test_split_and_close_buttons_survive_narrow_cards() {
+    use lazytmux::ui::panes::{PaneControl, control_strip};
+
+    assert!(control_strip(13).is_none(), "no room for controls at all");
+    for width in [14u16, 20, 28, 40] {
+        let strip = control_strip(width).expect("controls fit");
+        for control in [
+            PaneControl::SplitStacked,
+            PaneControl::SplitSideBySide,
+            PaneControl::Kill,
+        ] {
+            assert!(
+                (0..width).any(|c| strip.control_at(c) == Some(control)),
+                "width {width} dropped {control:?}"
+            );
+        }
+    }
+}
+
+/// Clicking [-] / [|] splits the pane; clicking [x] asks before killing it.
+/// This drives a real mouse event through the same path the terminal uses.
+#[test]
+fn test_pane_control_clicks_split_and_confirm_close() {
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+    use lazytmux::ui::panes::{PaneControl, control_strip};
+    use ratatui::layout::Rect;
+
+    // Screen position of a control on the selected pane card, as drawn.
+    fn click_at(app: &App, control: PaneControl, area: Rect) -> (u16, u16) {
+        let layout =
+            lazytmux::ui::AppLayout::split_with_mode(area, app.column_ratios, app.sidebar_mode);
+        let inner = ratatui::widgets::Block::default()
+            .borders(ratatui::widgets::Borders::ALL)
+            .inner(layout.panes_col);
+        let window = app.selected_window().expect("a window is selected");
+        let pane = app.selected_pane().expect("a pane is selected");
+        let root = lazytmux::domain::LayoutNode::parse(&window.layout_str).expect("layout parses");
+        let (_, rect) = (inner.y..inner.y + inner.height)
+            .flat_map(|y| (inner.x..inner.x + inner.width).map(move |x| (x, y)))
+            .find_map(|(x, y)| root.find_pane_rect_at(inner, x, y))
+            .filter(|(id, _)| *id == pane.id)
+            .expect("selected pane has a rect on screen");
+        let strip = control_strip(rect.width).expect("card is wide enough for controls");
+        let offset = (0..rect.width)
+            .find(|c| strip.control_at(*c) == Some(control))
+            .expect("control is on this card");
+        (rect.x + offset, rect.y + rect.height - 1)
+    }
+
+    let area = Rect::new(0, 0, 200, 50);
+
+    // [x] asks first, and cancelling kills nothing.
+    let mut app = make_app();
+    app.focus = FocusColumn::Panes;
+    app.last_area = area;
+    let before = app.selected_window().unwrap().panes.len();
+    let (col, row) = click_at(&app, PaneControl::Kill, area);
+
+    let click = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: col,
+        row,
+        modifiers: crossterm::event::KeyModifiers::NONE,
+    };
+    // The card is already selected, so its controls are on screen and one
+    // click reaches the button.
+    if let Some(action) = app.handle_mouse_event(click, area) {
+        let mut next = app.update(action).unwrap();
+        while let Some(a) = next {
+            next = app.update(a).unwrap();
+        }
+    }
+
+    assert!(
+        matches!(
+            app.mode,
+            Mode::Confirm(lazytmux::app::ConfirmTarget::KillPane(..))
+        ),
+        "close button must confirm first, mode was {:?}",
+        app.mode
+    );
+    assert_eq!(app.selected_window().unwrap().panes.len(), before);
+    app.update(Action::CancelModal).unwrap();
+    assert_eq!(
+        app.selected_window().unwrap().panes.len(),
+        before,
+        "cancelling the confirm must not close the pane"
+    );
+    app.update(Action::ConfirmDestructive).ok();
+
+    // [-] and [|] split immediately, no modal.
+    for (control, vertical) in [
+        (PaneControl::SplitStacked, false),
+        (PaneControl::SplitSideBySide, true),
+    ] {
+        let mut app = make_app();
+        app.focus = FocusColumn::Panes;
+        app.last_area = area;
+        let before = app.selected_window().unwrap().panes.len();
+        assert_eq!(control.action(), Action::SplitPane { vertical });
+
+        let (col, row) = click_at(&app, control, area);
+        let click = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: col,
+            row,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        };
+        if let Some(action) = app.handle_mouse_event(click, area) {
+            let mut next = app.update(action).unwrap();
+            while let Some(a) = next {
+                next = app.update(a).unwrap();
+            }
+        }
+
+        assert_eq!(
+            app.mode,
+            Mode::Normal,
+            "{control:?} should not open a modal"
+        );
+        assert_eq!(
+            app.selected_window().unwrap().panes.len(),
+            before + 1,
+            "{control:?} did not create a pane"
+        );
+    }
+}
+
+/// A card that is not selected shows no controls, so clicking where a button
+/// would be must only select it — never fire an invisible button.
+#[test]
+fn test_click_on_unselected_card_only_selects() {
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+    use ratatui::layout::Rect;
+
+    let mut app = make_app();
+    app.focus = FocusColumn::Panes;
+    let area = Rect::new(0, 0, 200, 50);
+    app.last_area = area;
+    app.selection.pane_idx = 1;
+    let before = app.selected_window().unwrap().panes.len();
+
+    let layout =
+        lazytmux::ui::AppLayout::split_with_mode(area, app.column_ratios, app.sidebar_mode);
+    let inner = ratatui::widgets::Block::default()
+        .borders(ratatui::widgets::Borders::ALL)
+        .inner(layout.panes_col);
+    let window = app.selected_window().unwrap();
+    let root = lazytmux::domain::LayoutNode::parse(&window.layout_str).unwrap();
+    let other = app.selected_window().unwrap().panes[0].id.clone();
+    let (_, rect) = (inner.y..inner.y + inner.height)
+        .flat_map(|y| (inner.x..inner.x + inner.width).map(move |x| (x, y)))
+        .find_map(|(x, y)| root.find_pane_rect_at(inner, x, y))
+        .filter(|(id, _)| *id == other)
+        .expect("unselected pane has a rect");
+
+    let click = MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: rect.x + 2,
+        row: rect.y + rect.height - 1,
+        modifiers: crossterm::event::KeyModifiers::NONE,
+    };
+    if let Some(action) = app.handle_mouse_event(click, area) {
+        let mut next = app.update(action).unwrap();
+        while let Some(a) = next {
+            next = app.update(a).unwrap();
+        }
+    }
+
+    assert_eq!(app.mode, Mode::Normal, "an unseen button fired");
+    assert_eq!(app.selected_window().unwrap().panes.len(), before);
+}
+
+/// Yes / No must be clickable exactly where they are drawn. This renders the
+/// real dialog and checks the hit-test against the terminal buffer.
+#[test]
+fn test_confirm_button_hitboxes_match_what_is_drawn() {
+    use lazytmux::ui::modals::{ConfirmButton, confirm_button_at, confirm_layout};
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::layout::Rect;
+
+    for (w, h) in [(60u16, 20u16), (80, 24), (120, 40), (200, 50)] {
+        let area = Rect::new(0, 0, w, h);
+        let mut app = make_app();
+        app.last_area = area;
+        app.focus = FocusColumn::Panes;
+        app.update(Action::PromptKill).unwrap();
+        assert!(matches!(app.mode, Mode::Confirm(_)));
+
+        let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
+        terminal.draw(|f| lazytmux::ui::render(&app, f)).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+
+        let buttons = confirm_layout(area).buttons;
+        assert!(
+            buttons.height > 0,
+            "{w}x{h}: dialog drawn with no room for its buttons"
+        );
+        let row = buttons.y;
+        let painted: String = (0..w).map(|x| buffer[(x, row)].symbol()).collect();
+
+        for (needle, expected) in [("Yes", ConfirmButton::Yes), ("No", ConfirmButton::No)] {
+            let byte_idx = painted
+                .find(needle)
+                .unwrap_or_else(|| panic!("{needle:?} not drawn at {w}x{h}: {painted:?}"));
+            let column = painted[..byte_idx].chars().count() as u16;
+            for offset in 0..needle.chars().count() as u16 {
+                assert_eq!(
+                    confirm_button_at(area, column + offset, row),
+                    Some(expected),
+                    "{w}x{h}: column {} shows {needle:?} but hit-tests wrong\nrow: {painted:?}",
+                    column + offset
+                );
+            }
+        }
+
+        // When a key badge is shown it is part of the same target. Narrow
+        // dialogs drop the badge, but never the choice itself.
+        if let Some(badge) = painted.find("[y") {
+            let badge_col = painted[..badge].chars().count() as u16;
+            assert_eq!(
+                confirm_button_at(area, badge_col, row),
+                Some(ConfirmButton::Yes),
+                "{w}x{h}: key badge is not part of the Yes target"
+            );
+        }
+        // Nothing outside the buttons row responds.
+        let yes_col = (0..w)
+            .find(|c| confirm_button_at(area, *c, row) == Some(ConfirmButton::Yes))
+            .expect("Yes is hit-testable");
+        assert_eq!(confirm_button_at(area, yes_col, row + 1), None);
+    }
+}
+
+/// Clicking Yes kills, clicking No does not, and clicking outside cancels.
+#[test]
+fn test_confirm_dialog_responds_to_clicks() {
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+    use lazytmux::ui::modals::{ConfirmButton, confirm_button_at, confirm_layout};
+    use ratatui::layout::Rect;
+
+    let area = Rect::new(0, 0, 120, 40);
+    let row = confirm_layout(area).buttons.y;
+    let column_of = |wanted: ConfirmButton| -> u16 {
+        (0..120u16)
+            .find(|c| confirm_button_at(area, *c, row) == Some(wanted))
+            .expect("button present")
+    };
+
+    let click = |app: &mut App, column: u16, row: u16| {
+        let event = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        };
+        if let Some(action) = app.handle_mouse_event(event, area) {
+            let mut next = app.update(action).unwrap();
+            while let Some(a) = next {
+                next = app.update(a).unwrap();
+            }
+        }
+    };
+
+    // No -> nothing dies.
+    let mut app = make_app();
+    app.last_area = area;
+    app.focus = FocusColumn::Panes;
+    let before = app.selected_window().unwrap().panes.len();
+    app.update(Action::PromptKill).unwrap();
+    click(&mut app, column_of(ConfirmButton::No), row);
+    assert_eq!(app.mode, Mode::Normal);
+    assert_eq!(app.selected_window().unwrap().panes.len(), before);
+
+    // Outside the dialog -> cancels, still nothing dies.
+    app.update(Action::PromptKill).unwrap();
+    click(&mut app, 1, 1);
+    assert_eq!(app.mode, Mode::Normal);
+    assert_eq!(app.selected_window().unwrap().panes.len(), before);
+
+    // Yes -> the pane is killed.
+    app.update(Action::PromptKill).unwrap();
+    click(&mut app, column_of(ConfirmButton::Yes), row);
+    assert_eq!(app.mode, Mode::Normal);
+    assert_eq!(app.selected_window().unwrap().panes.len(), before - 1);
+}
+
+/// A click while any modal is open must not reach the workspace behind it.
+/// Before this, a click could move the selection under the dialog — or hit a
+/// pane-card button and retarget the very confirmation being shown.
+#[test]
+fn test_modal_clicks_do_not_fall_through() {
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+    use ratatui::layout::Rect;
+
+    let area = Rect::new(0, 0, 200, 50);
+
+    for open in [
+        Action::PromptKill,
+        Action::PromptNewSession,
+        Action::PromptNewWindow,
+        Action::PromptRenameSession,
+        Action::PromptSendCommand,
+        Action::PromptNewPane,
+    ] {
+        let mut app = make_app();
+        app.last_area = area;
+        app.focus = FocusColumn::Panes;
+        app.selection.pane_idx = 0;
+        app.update(open.clone()).unwrap();
+        assert_ne!(app.mode, Mode::Normal, "{open:?} did not open a modal");
+
+        let panes_before = app.selected_window().unwrap().panes.len();
+        let session_before = app.selection.session_idx;
+
+        // Bottom-left of the sessions column: selection territory, far from
+        // every dialog.
+        let event = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 4,
+            row: 3,
+            modifiers: crossterm::event::KeyModifiers::NONE,
+        };
+        if let Some(action) = app.handle_mouse_event(event, area) {
+            let mut next = app.update(action).unwrap();
+            while let Some(a) = next {
+                next = app.update(a).unwrap();
+            }
+        }
+
+        assert_eq!(
+            app.selection.session_idx, session_before,
+            "{open:?}: click moved the selection behind the modal"
+        );
+        assert_eq!(
+            app.selected_window().unwrap().panes.len(),
+            panes_before,
+            "{open:?}: click behind the modal changed panes"
+        );
+    }
+}

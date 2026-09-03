@@ -79,6 +79,11 @@ fn capture_window_previews(
     }
 }
 
+/// Whether a screen position falls inside a rectangle.
+fn contains(rect: ratatui::layout::Rect, column: u16, row: u16) -> bool {
+    column >= rect.x && column < rect.x + rect.width && row >= rect.y && row < rect.y + rect.height
+}
+
 const LAYOUT_PRESETS: &[&str] = &[
     "even-horizontal",
     "even-vertical",
@@ -1926,7 +1931,13 @@ impl App {
             }
 
             Action::SplitPane { vertical } => {
-                if let Mode::PromptNewPane { pane_id } = self.mode.clone() {
+                // Either the keyboard modal names the pane, or the action came
+                // from the selected card's [-] / [|] button.
+                let target = match self.mode.clone() {
+                    Mode::PromptNewPane { pane_id } => Some(pane_id),
+                    _ => self.selected_pane().map(|p| p.id.clone()),
+                };
+                if let Some(pane_id) = target {
                     match self.client.split_pane(&pane_id, vertical) {
                         Ok(new_id) => {
                             let split_type = if vertical { "vertical" } else { "horizontal" };
@@ -1987,13 +1998,40 @@ impl App {
                     return Ok(None);
                 }
 
-                if let Mode::PromptSendCommand { .. } = self.mode {
-                    let overlay_area = crate::ui::modals::centered_rect(50, 25, self.last_area);
-                    if !(column >= overlay_area.x
-                        && column < overlay_area.x + overlay_area.width
-                        && row >= overlay_area.y
-                        && row < overlay_area.y + overlay_area.height)
+                // Yes / No are clickable; clicking outside the dialog cancels,
+                // which is the safe direction for a destructive action.
+                if let Mode::Confirm(_) = self.mode {
+                    if let Some(button) =
+                        crate::ui::modals::confirm_button_at(self.last_area, column, row)
                     {
+                        return match button {
+                            crate::ui::modals::ConfirmButton::Yes => {
+                                self.update(Action::ConfirmDestructive)
+                            }
+                            crate::ui::modals::ConfirmButton::No => {
+                                self.update(Action::CancelModal)
+                            }
+                        };
+                    }
+                    let overlay = crate::ui::modals::confirm_layout(self.last_area).overlay;
+                    if !contains(overlay, column, row) {
+                        self.mode = Mode::Normal;
+                    }
+                    return Ok(None);
+                }
+
+                // Every other modal swallows the click. Without this a click
+                // would fall through to the workspace behind the dialog and
+                // move the selection — or hit a pane-card button underneath it.
+                if let Mode::PromptSendCommand { .. }
+                | Mode::PromptNewSession { .. }
+                | Mode::PromptNewWindow { .. }
+                | Mode::PromptNewPane { .. }
+                | Mode::PromptRenameSession { .. }
+                | Mode::PromptRenameWindow { .. } = self.mode
+                {
+                    let overlay_area = crate::ui::modals::prompt_overlay(self.last_area);
+                    if !contains(overlay_area, column, row) {
                         self.mode = Mode::Normal;
                     }
                     return Ok(None);
@@ -2154,37 +2192,27 @@ impl App {
                         }
 
                         if let Some(p_id) = found_pane_id {
+                            // The control strip is drawn only on the selected
+                            // card, so only a card that was already selected can
+                            // have its controls clicked. Otherwise the first
+                            // click just selects, and the buttons appear.
+                            let was_selected = window
+                                .panes
+                                .get(self.selection.pane_idx)
+                                .is_some_and(|p| p.id == p_id);
                             if let Some(pos) = window.panes.iter().position(|p| p.id == p_id) {
                                 self.selection.pane_idx = pos;
                             }
-                            // Check if click was on bottom border controls ([◀] [▼] [▲] [▶] [↕ swap])
-                            if let Some(rect) = found_rect
+
+                            if was_selected
+                                && let Some(rect) = found_rect
                                 && row == rect.y + rect.height.saturating_sub(1)
+                                && let Some(control) = crate::ui::panes::control_strip(rect.width)
+                                    .and_then(|strip| {
+                                        strip.control_at(column.saturating_sub(rect.x))
+                                    })
                             {
-                                let col_offset = column.saturating_sub(rect.x);
-                                if (1..=4).contains(&col_offset) {
-                                    return self.update(Action::ResizePane(
-                                        crate::tmux::client::ResizeDirection::Left,
-                                        4,
-                                    ));
-                                } else if (5..=8).contains(&col_offset) {
-                                    return self.update(Action::ResizePane(
-                                        crate::tmux::client::ResizeDirection::Down,
-                                        2,
-                                    ));
-                                } else if (9..=12).contains(&col_offset) {
-                                    return self.update(Action::ResizePane(
-                                        crate::tmux::client::ResizeDirection::Up,
-                                        2,
-                                    ));
-                                } else if (13..=16).contains(&col_offset) {
-                                    return self.update(Action::ResizePane(
-                                        crate::tmux::client::ResizeDirection::Right,
-                                        4,
-                                    ));
-                                } else if (17..=26).contains(&col_offset) {
-                                    return self.update(Action::SwapPaneDown);
-                                }
+                                return self.update(control.action());
                             }
                             self.mouse_drag_start = Some((column, row, p_id));
                         } else if !window.panes.is_empty() && row > inner_panes_area.y {
