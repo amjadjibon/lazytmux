@@ -8,10 +8,8 @@ use ratatui::widgets::{List, ListItem, Paragraph};
 
 pub fn render(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
     let focused = app.focus == FocusColumn::Windows;
-    let title = match app.sidebar_mode {
-        crate::ui::SidebarMode::SessionsHidden => "[▶ Sessions] WINDOWS [◀]",
-        _ => "WINDOWS [◀]",
-    };
+    let strip = crate::ui::header::windows_header(area.width, app.sidebar_mode);
+    let title = strip.title();
     let block = theme.block(title, focused);
 
     let session = match app.selected_session() {

@@ -774,6 +774,17 @@ fn test_sidebar_mode_layout_geometry() {
     assert_eq!(panes_only.panes_col.width, full.columns_area.width);
 }
 
+/// First column showing `control` in a header strip.
+fn column_of_header_control(
+    strip: &lazytmux::ui::HeaderStrip,
+    control: lazytmux::ui::HeaderControl,
+    width: u16,
+) -> u16 {
+    (0..width)
+        .find(|c| strip.control_at(*c) == Some(control))
+        .unwrap_or_else(|| panic!("{control:?} not present in header of width {width}"))
+}
+
 #[test]
 fn test_mouse_header_buttons_collapse_expand() {
     let mock = Box::new(MockTmuxClient::new());
@@ -785,20 +796,30 @@ fn test_mouse_header_buttons_collapse_expand() {
     let layout =
         lazytmux::ui::AppLayout::split_with_mode(area, app.column_ratios, app.sidebar_mode);
 
-    // 1. Click on [◀] in Sessions header (right side of sessions header)
+    // 1. Click [◀] in the Sessions header, where it is actually drawn.
+    let collapse = column_of_header_control(
+        &lazytmux::ui::header::sessions_header(layout.sessions_col.width, app.sidebar_mode),
+        lazytmux::ui::HeaderControl::Collapse,
+        layout.sessions_col.width,
+    );
     app.update(Action::MouseClick {
-        column: layout.sessions_col.x + layout.sessions_col.width - 2,
+        column: layout.sessions_col.x + collapse,
         row: layout.sessions_col.y,
         double_click: false,
     })
     .unwrap();
     assert_eq!(app.sidebar_mode, lazytmux::ui::SidebarMode::SessionsHidden);
 
-    // 2. Click on [◀] in Windows header (right side of windows header)
+    // 2. Click [◀] in the Windows header.
     let layout2 =
         lazytmux::ui::AppLayout::split_with_mode(area, app.column_ratios, app.sidebar_mode);
+    let collapse = column_of_header_control(
+        &lazytmux::ui::header::windows_header(layout2.windows_col.width, app.sidebar_mode),
+        lazytmux::ui::HeaderControl::Collapse,
+        layout2.windows_col.width,
+    );
     app.update(Action::MouseClick {
-        column: layout2.windows_col.x + layout2.windows_col.width - 2,
+        column: layout2.windows_col.x + collapse,
         row: layout2.windows_col.y,
         double_click: false,
     })
@@ -816,22 +837,32 @@ fn test_mouse_header_buttons_collapse_expand() {
     .unwrap();
     assert_eq!(app.sidebar_mode, lazytmux::ui::SidebarMode::Full);
 
-    // 4. Click on [◀] in Windows header directly from Full mode (collapses Windows!)
+    // 4. Click [◀] in the Windows header from Full mode (collapses Windows).
     let layout4 =
         lazytmux::ui::AppLayout::split_with_mode(area, app.column_ratios, app.sidebar_mode);
+    let collapse = column_of_header_control(
+        &lazytmux::ui::header::windows_header(layout4.windows_col.width, app.sidebar_mode),
+        lazytmux::ui::HeaderControl::Collapse,
+        layout4.windows_col.width,
+    );
     app.update(Action::MouseClick {
-        column: layout4.windows_col.x + 10, // right on "[◀]" next to "WINDOWS"
+        column: layout4.windows_col.x + collapse,
         row: layout4.windows_col.y,
         double_click: false,
     })
     .unwrap();
     assert_eq!(app.sidebar_mode, lazytmux::ui::SidebarMode::WindowsHidden);
 
-    // 5. Click on [▶ Windows] in Sessions header (restores Windows!)
+    // 5. Click [▶ Windows] in the Sessions header (restores Windows).
     let layout5 =
         lazytmux::ui::AppLayout::split_with_mode(area, app.column_ratios, app.sidebar_mode);
+    let expand = column_of_header_control(
+        &lazytmux::ui::header::sessions_header(layout5.sessions_col.width, app.sidebar_mode),
+        lazytmux::ui::HeaderControl::Expand,
+        layout5.sessions_col.width,
+    );
     app.update(Action::MouseClick {
-        column: layout5.sessions_col.x + 16,
+        column: layout5.sessions_col.x + expand,
         row: layout5.sessions_col.y,
         double_click: false,
     })
@@ -1766,4 +1797,155 @@ fn test_modal_clicks_do_not_fall_through() {
             "{open:?}: click behind the modal changed panes"
         );
     }
+}
+
+/// Header buttons must be clickable exactly where they are painted. This
+/// renders the real widgets and checks the hit-test against the terminal
+/// buffer — the strip's own string is not evidence, because `Theme::block`
+/// pads every title and would silently shift the columns.
+#[test]
+fn test_header_control_hitboxes_match_what_is_drawn() {
+    use lazytmux::ui::header::{sessions_header, windows_header};
+    use lazytmux::ui::{AppLayout, HeaderControl, SidebarMode};
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::layout::Rect;
+
+    for w in [80u16, 100, 150, 200] {
+        for mode in [
+            SidebarMode::Full,
+            SidebarMode::SessionsHidden,
+            SidebarMode::WindowsHidden,
+        ] {
+            let area = Rect::new(0, 0, w, 30);
+            let mut app = make_app();
+            app.last_area = area;
+            app.sidebar_mode = mode;
+
+            let mut terminal = Terminal::new(TestBackend::new(w, 30)).unwrap();
+            terminal.draw(|f| lazytmux::ui::render(&app, f)).unwrap();
+            let buffer = terminal.backend().buffer().clone();
+
+            let layout = AppLayout::split_with_mode(area, app.column_ratios, mode);
+            for (col, strip) in [
+                (
+                    layout.sessions_col,
+                    sessions_header(layout.sessions_col.width, mode),
+                ),
+                (
+                    layout.windows_col,
+                    windows_header(layout.windows_col.width, mode),
+                ),
+            ] {
+                if col.width == 0 || strip.title().is_empty() {
+                    continue;
+                }
+                let painted: String = (col.x..col.x + col.width)
+                    .map(|x| buffer[(x, col.y)].symbol())
+                    .collect();
+
+                for (label, control) in [("[+]", HeaderControl::New), ("[x]", HeaderControl::Kill)]
+                {
+                    let byte_idx = painted.find(label).unwrap_or_else(|| {
+                        panic!("{w} {mode:?}: {label} not drawn in header {painted:?}")
+                    });
+                    let column = painted[..byte_idx].chars().count() as u16;
+                    for offset in 0..3u16 {
+                        assert_eq!(
+                            strip.control_at(column + offset),
+                            Some(control),
+                            "{w} {mode:?}: {label} painted at column {} but hit-tests wrong\nheader: {painted:?}",
+                            column + offset
+                        );
+                    }
+                }
+
+                // The header never spills past its column.
+                assert!(
+                    painted.chars().count() as u16 <= col.width,
+                    "{w} {mode:?}: header overflows its column"
+                );
+            }
+        }
+    }
+}
+
+/// [+] creates, [x] confirms before killing — for both sessions and windows.
+#[test]
+fn test_header_buttons_create_and_confirm_kill() {
+    use lazytmux::ui::header::{sessions_header, windows_header};
+    use lazytmux::ui::{AppLayout, HeaderControl};
+    use ratatui::layout::Rect;
+
+    let area = Rect::new(0, 0, 120, 40);
+
+    // Sessions [+] opens the new-session prompt.
+    let mut app = make_app();
+    app.last_area = area;
+    let layout = AppLayout::split_with_mode(area, app.column_ratios, app.sidebar_mode);
+    let strip = sessions_header(layout.sessions_col.width, app.sidebar_mode);
+    let new_col = column_of_header_control(&strip, HeaderControl::New, layout.sessions_col.width);
+    app.update(Action::MouseClick {
+        column: layout.sessions_col.x + new_col,
+        row: layout.sessions_col.y,
+        double_click: false,
+    })
+    .unwrap();
+    assert!(matches!(app.mode, Mode::PromptNewSession { .. }));
+    app.update(Action::CancelModal).unwrap();
+
+    // Sessions [x] confirms against the selected session, killing nothing yet.
+    let before = app.sessions.len();
+    let kill_col = column_of_header_control(&strip, HeaderControl::Kill, layout.sessions_col.width);
+    app.update(Action::MouseClick {
+        column: layout.sessions_col.x + kill_col,
+        row: layout.sessions_col.y,
+        double_click: false,
+    })
+    .unwrap();
+    assert!(
+        matches!(
+            app.mode,
+            Mode::Confirm(lazytmux::app::ConfirmTarget::KillSession(..))
+        ),
+        "header [x] must confirm a session kill, got {:?}",
+        app.mode
+    );
+    assert_eq!(app.sessions.len(), before);
+    app.update(Action::ConfirmDestructive).unwrap();
+    assert_eq!(app.sessions.len(), before - 1);
+
+    // Windows [+] and [x] target windows, not sessions.
+    let mut app = make_app();
+    app.last_area = area;
+    let layout = AppLayout::split_with_mode(area, app.column_ratios, app.sidebar_mode);
+    let strip = windows_header(layout.windows_col.width, app.sidebar_mode);
+    let new_col = column_of_header_control(&strip, HeaderControl::New, layout.windows_col.width);
+    app.update(Action::MouseClick {
+        column: layout.windows_col.x + new_col,
+        row: layout.windows_col.y,
+        double_click: false,
+    })
+    .unwrap();
+    assert!(matches!(app.mode, Mode::PromptNewWindow { .. }));
+    app.update(Action::CancelModal).unwrap();
+
+    let before = app.selected_session().unwrap().windows.len();
+    let kill_col = column_of_header_control(&strip, HeaderControl::Kill, layout.windows_col.width);
+    app.update(Action::MouseClick {
+        column: layout.windows_col.x + kill_col,
+        row: layout.windows_col.y,
+        double_click: false,
+    })
+    .unwrap();
+    assert!(
+        matches!(
+            app.mode,
+            Mode::Confirm(lazytmux::app::ConfirmTarget::KillWindow(..))
+        ),
+        "header [x] must confirm a window kill, got {:?}",
+        app.mode
+    );
+    app.update(Action::ConfirmDestructive).unwrap();
+    assert_eq!(app.selected_session().unwrap().windows.len(), before - 1);
 }

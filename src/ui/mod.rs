@@ -1,4 +1,5 @@
 pub mod footer;
+pub mod header;
 pub mod inspect;
 pub mod layout;
 pub mod modals;
@@ -8,6 +9,7 @@ pub mod sessions;
 pub mod theme;
 pub mod windows;
 
+pub use header::{HeaderControl, HeaderStrip};
 pub use layout::{AppLayout, SidebarMode};
 pub use theme::{Theme, ThemePreset};
 

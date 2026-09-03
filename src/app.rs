@@ -2057,26 +2057,25 @@ impl App {
                     && row >= layout.sessions_col.y
                     && row < layout.sessions_col.y + layout.sessions_col.height
                 {
-                    // Check if clicked on [◀] or [▶ Windows] button on header row
                     if row == layout.sessions_col.y {
-                        let rel_x = column.saturating_sub(layout.sessions_col.x);
-                        if self.sidebar_mode == crate::ui::SidebarMode::WindowsHidden && rel_x >= 14
-                        {
-                            return self
-                                .update(Action::SetSidebarMode(crate::ui::SidebarMode::Full));
-                        }
-                        if rel_x >= 8
-                            || column
-                                >= layout.sessions_col.x
-                                    + layout.sessions_col.width.saturating_sub(6)
-                        {
-                            let next_mode =
+                        let control = crate::ui::header::sessions_header(
+                            layout.sessions_col.width,
+                            self.sidebar_mode,
+                        )
+                        .control_at(column.saturating_sub(layout.sessions_col.x));
+                        if let Some(control) = control {
+                            let collapse_to =
                                 if self.sidebar_mode == crate::ui::SidebarMode::WindowsHidden {
                                     crate::ui::SidebarMode::PanesOnly
                                 } else {
                                     crate::ui::SidebarMode::SessionsHidden
                                 };
-                            return self.update(Action::SetSidebarMode(next_mode));
+                            return self.header_action(
+                                control,
+                                FocusColumn::Sessions,
+                                Action::PromptNewSession,
+                                collapse_to,
+                            );
                         }
                     }
 
@@ -2103,36 +2102,25 @@ impl App {
                     && row >= layout.windows_col.y
                     && row < layout.windows_col.y + layout.windows_col.height
                 {
-                    // Check header row buttons ([▶ Sessions] on left, [◀] on right)
                     if row == layout.windows_col.y {
-                        let rel_x = column.saturating_sub(layout.windows_col.x);
-                        if self.sidebar_mode == crate::ui::SidebarMode::SessionsHidden && rel_x < 14
-                        {
-                            return self
-                                .update(Action::SetSidebarMode(crate::ui::SidebarMode::Full));
-                        }
-                        let is_collapse = match self.sidebar_mode {
-                            crate::ui::SidebarMode::SessionsHidden => {
-                                rel_x >= 20
-                                    || column
-                                        >= layout.windows_col.x
-                                            + layout.windows_col.width.saturating_sub(6)
-                            }
-                            _ => {
-                                rel_x >= 8
-                                    || column
-                                        >= layout.windows_col.x
-                                            + layout.windows_col.width.saturating_sub(6)
-                            }
-                        };
-                        if is_collapse {
-                            let next_mode =
+                        let control = crate::ui::header::windows_header(
+                            layout.windows_col.width,
+                            self.sidebar_mode,
+                        )
+                        .control_at(column.saturating_sub(layout.windows_col.x));
+                        if let Some(control) = control {
+                            let collapse_to =
                                 if self.sidebar_mode == crate::ui::SidebarMode::SessionsHidden {
                                     crate::ui::SidebarMode::PanesOnly
                                 } else {
                                     crate::ui::SidebarMode::WindowsHidden
                                 };
-                            return self.update(Action::SetSidebarMode(next_mode));
+                            return self.header_action(
+                                control,
+                                FocusColumn::Windows,
+                                Action::PromptNewWindow,
+                                collapse_to,
+                            );
                         }
                     }
 
@@ -2567,6 +2555,32 @@ impl App {
             }
         }
         Ok(None)
+    }
+
+    /// Dispatch a click on a column header. `New` and `Kill` act on that
+    /// column, so focus moves there first: kill reads focus to pick its target.
+    fn header_action(
+        &mut self,
+        control: crate::ui::HeaderControl,
+        column: FocusColumn,
+        new: Action,
+        collapse_to: crate::ui::SidebarMode,
+    ) -> Result<Option<Action>> {
+        use crate::ui::HeaderControl;
+        match control {
+            HeaderControl::Expand => {
+                self.update(Action::SetSidebarMode(crate::ui::SidebarMode::Full))
+            }
+            HeaderControl::Collapse => self.update(Action::SetSidebarMode(collapse_to)),
+            HeaderControl::New => {
+                self.focus = column;
+                self.update(new)
+            }
+            HeaderControl::Kill => {
+                self.focus = column;
+                self.update(Action::PromptKill)
+            }
+        }
     }
 
     pub fn show_toast(&mut self, message: String, level: ToastLevel) {
