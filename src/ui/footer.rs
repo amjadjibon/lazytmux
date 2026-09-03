@@ -124,6 +124,8 @@ pub fn render_footer(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
             Span::raw(" kill "),
             Span::styled(" f ", Style::default().bg(Color::DarkGray).fg(Color::White)),
             Span::raw(" fav "),
+            Span::styled(" / ", Style::default().bg(Color::DarkGray).fg(Color::White)),
+            Span::raw(" search "),
             Span::styled(" t ", Style::default().bg(Color::DarkGray).fg(Color::White)),
             Span::raw(" theme "),
             Span::styled(
@@ -163,12 +165,14 @@ pub fn render_footer(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
             Span::styled(" r ", Style::default().bg(Color::DarkGray).fg(Color::White)),
             Span::raw(" rename "),
             Span::styled(
-                " [/] ",
+                " [ ] ",
                 Style::default().bg(Color::DarkGray).fg(Color::White),
             ),
             Span::raw(" move "),
             Span::styled(" x ", Style::default().bg(Color::DarkGray).fg(Color::White)),
             Span::raw(" kill "),
+            Span::styled(" / ", Style::default().bg(Color::DarkGray).fg(Color::White)),
+            Span::raw(" search "),
             Span::styled(" t ", Style::default().bg(Color::DarkGray).fg(Color::White)),
             Span::raw(" theme "),
             Span::styled(
@@ -214,7 +218,7 @@ pub fn render_footer(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
             Span::styled(" s ", Style::default().bg(Color::DarkGray).fg(Color::White)),
             Span::raw(" sync "),
             Span::styled(
-                " [/] ",
+                " [ ] ",
                 Style::default().bg(Color::DarkGray).fg(Color::White),
             ),
             Span::raw(" swap "),
@@ -225,6 +229,8 @@ pub fn render_footer(app: &App, frame: &mut Frame, area: Rect, theme: &Theme) {
             Span::raw(" resize "),
             Span::styled(" z ", Style::default().bg(Color::DarkGray).fg(Color::White)),
             Span::raw(" zoom "),
+            Span::styled(" / ", Style::default().bg(Color::DarkGray).fg(Color::White)),
+            Span::raw(" search "),
             Span::styled(" t ", Style::default().bg(Color::DarkGray).fg(Color::White)),
             Span::raw(" theme "),
             Span::styled(
