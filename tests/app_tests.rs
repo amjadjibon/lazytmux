@@ -2145,8 +2145,10 @@ fn test_dialog_buttons_respond_to_clicks() {
 }
 
 /// `break-pane` takes the source pane in `-s`; `-t` names the destination
-/// window and tmux rejects a pane id there. The mock accepts any argument, so
-/// only a live server can catch that class of mistake.
+/// window and tmux rejects a pane id there. Omitting `-t` is wrong in a subtler
+/// way: tmux then uses its own current session, so the decoy session created
+/// last here would swallow the new window. The mock accepts any argument, so
+/// only a live server can catch either mistake.
 #[test]
 fn test_live_break_pane_moves_pane_to_new_window() {
     use lazytmux::tmux::{CliTmuxClient, TmuxClient};
@@ -2158,11 +2160,17 @@ fn test_live_break_pane_moves_pane_to_new_window() {
     }
 
     let session = "lazytmux_ci_break_test";
+    let decoy = "lazytmux_ci_break_decoy";
     let _ = Command::new("tmux")
         .args(["new-session", "-d", "-s", session, "-n", "src"])
         .output();
     let _ = Command::new("tmux")
         .args(["split-window", "-t", session])
+        .output();
+    // Created last, so tmux considers it the current session: a `break-pane`
+    // that does not name its destination drops the new window in here.
+    let _ = Command::new("tmux")
+        .args(["new-session", "-d", "-s", decoy, "-n", "decoy"])
         .output();
 
     let mut client = CliTmuxClient::new();
@@ -2179,16 +2187,21 @@ fn test_live_break_pane_moves_pane_to_new_window() {
         .map(|(_, pane)| client.break_pane(pane))
         .transpose();
 
-    let after = client
-        .fetch_full_tree()
-        .unwrap_or_default()
+    let tree_after = client.fetch_full_tree().unwrap_or_default();
+    let after = tree_after
         .iter()
         .find(|s| s.name == session)
         .map(|s| s.windows.len());
+    let decoy_after = tree_after
+        .iter()
+        .find(|s| s.name == decoy)
+        .map(|s| s.windows.len());
 
-    let _ = Command::new("tmux")
-        .args(["kill-session", "-t", session])
-        .output();
+    for name in [session, decoy] {
+        let _ = Command::new("tmux")
+            .args(["kill-session", "-t", name])
+            .output();
+    }
 
     let (windows_before, _) = target.expect("test session was created");
     result.expect("break_pane must succeed against a real tmux server");
@@ -2196,6 +2209,11 @@ fn test_live_break_pane_moves_pane_to_new_window() {
         after,
         Some(windows_before + 1),
         "the pane should have become a new window"
+    );
+    assert_eq!(
+        decoy_after,
+        Some(1),
+        "the new window must stay in the pane's own session"
     );
 }
 

@@ -304,9 +304,18 @@ impl TmuxClient for CliTmuxClient {
     }
 
     fn break_pane(&mut self, pane: &PaneId) -> Result<()> {
-        // `-s` is the source pane; `-t` would be the destination *window*, and
-        // tmux rejects a pane id there with "can't specify pane here".
-        self.run_cmd(&["break-pane", "-d", "-s", &pane.0])?;
+        // `-s` is the source pane; `-t` is the destination *window*, and tmux
+        // rejects a pane id there with "can't specify pane here". Leaving `-t`
+        // off is not an option either: tmux then falls back to its notion of
+        // the current session, so a pane broken out of a session the user is
+        // not attached to lands in a different session entirely. Resolving the
+        // pane's own window and inserting after it with `-a` keeps the new
+        // window where the pane came from.
+        let window = self
+            .run_cmd(&["display-message", "-p", "-t", &pane.0, "#{window_id}"])?
+            .trim()
+            .to_string();
+        self.run_cmd(&["break-pane", "-d", "-a", "-s", &pane.0, "-t", &window])?;
         Ok(())
     }
 

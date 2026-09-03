@@ -588,7 +588,10 @@ fn render_help(frame: &mut Frame, area: Rect, theme: &Theme) {
             Span::raw("Zoom / inspect full-screen scrollback for selected pane"),
         ]),
         Line::from(vec![
-            Span::styled("  c                     ", Style::default().fg(Color::Yellow)),
+            Span::styled(
+                "  c                     ",
+                Style::default().fg(Color::Yellow),
+            ),
             Span::raw("Clear selected pane's screen and scrollback"),
         ]),
         Line::from(vec![
@@ -628,7 +631,10 @@ fn render_help(frame: &mut Frame, area: Rect, theme: &Theme) {
             Span::raw("Jump to next / previous search match"),
         ]),
         Line::from(vec![
-            Span::styled("  c                     ", Style::default().fg(Color::Yellow)),
+            Span::styled(
+                "  c                     ",
+                Style::default().fg(Color::Yellow),
+            ),
             Span::raw("Clear pane screen and scrollback"),
         ]),
         Line::from(vec![
