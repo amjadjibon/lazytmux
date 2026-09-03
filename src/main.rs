@@ -52,9 +52,27 @@ fn main() -> color_eyre::Result<()> {
         std::process::exit(1);
     }
 
+    // Enable extended-keys in tmux if running inside tmux so modifiers like Ctrl+Enter can pass through
+    if !is_mock {
+        let _ = std::process::Command::new("tmux")
+            .args(["set", "-s", "extended-keys", "on"])
+            .output();
+    }
+
     // Terminal initialization
     enable_raw_mode()?;
     let mut stdout = stdout();
+    let supports_enhancement =
+        crossterm::terminal::supports_keyboard_enhancement().unwrap_or(false);
+    if supports_enhancement {
+        let _ = execute!(
+            stdout,
+            crossterm::event::PushKeyboardEnhancementFlags(
+                crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+            )
+        );
+    }
+
     if config.enable_mouse {
         execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     } else {
@@ -108,6 +126,12 @@ fn main() -> color_eyre::Result<()> {
     }
 
     // Clean terminal restoration
+    if supports_enhancement {
+        let _ = execute!(
+            terminal.backend_mut(),
+            crossterm::event::PopKeyboardEnhancementFlags
+        );
+    }
     disable_raw_mode()?;
     if config.enable_mouse {
         execute!(
@@ -136,6 +160,7 @@ fn main() -> color_eyre::Result<()> {
 fn init_panic_hook() {
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
+        let _ = execute!(io::stdout(), crossterm::event::PopKeyboardEnhancementFlags);
         let _ = disable_raw_mode();
         let _ = execute!(
             io::stdout(),

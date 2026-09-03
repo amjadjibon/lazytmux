@@ -521,6 +521,28 @@ fn test_send_keys_to_pane() {
     app.update(Action::ModalSubmitWithEnter).unwrap();
     assert_eq!(app.mode, Mode::Normal);
     assert!(app.toasts.last().unwrap().message.contains("<Enter>"));
+
+    // 4. Test Tab to toggle mode to With Enter and submit with plain Enter
+    app.update(Action::PromptSendCommand).unwrap();
+    if let Mode::PromptSendCommand { with_enter, .. } = app.mode {
+        assert!(!with_enter);
+    }
+    app.update(Action::TogglePromptWithEnter).unwrap();
+    if let Mode::PromptSendCommand { with_enter, .. } = app.mode {
+        assert!(with_enter);
+    }
+    for c in "tab toggled".chars() {
+        app.update(Action::ModalInput(c)).unwrap();
+    }
+    app.update(Action::ModalSubmit).unwrap();
+    assert_eq!(app.mode, Mode::Normal);
+    assert!(
+        app.toasts
+            .last()
+            .unwrap()
+            .message
+            .contains("tab toggled + ↵")
+    );
 }
 
 #[test]

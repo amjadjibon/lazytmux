@@ -105,6 +105,7 @@ pub enum Mode {
     PromptSendCommand {
         pane_id: PaneId,
         input: String,
+        with_enter: bool,
     },
     ConfirmKill(KillTarget),
     Help,
@@ -731,6 +732,7 @@ impl App {
 
             Mode::PromptSendCommand { .. } => match (key.modifiers, key.code) {
                 (KeyModifiers::NONE, KeyCode::Esc) => Some(Action::CancelModal),
+                (KeyModifiers::NONE, KeyCode::Tab) => Some(Action::TogglePromptWithEnter),
                 (KeyModifiers::CONTROL, KeyCode::Enter)
                 | (KeyModifiers::ALT, KeyCode::Enter)
                 | (KeyModifiers::SHIFT, KeyCode::Enter)
@@ -1835,6 +1837,22 @@ impl App {
                     return Ok(None);
                 }
 
+                if let Mode::PromptSendCommand { .. } = self.mode {
+                    let overlay_area = crate::ui::modals::centered_rect(58, 25, self.last_area);
+                    if column >= overlay_area.x
+                        && column < overlay_area.x + overlay_area.width
+                        && row >= overlay_area.y
+                        && row < overlay_area.y + overlay_area.height
+                    {
+                        if row >= overlay_area.y + 4 && row <= overlay_area.y + 6 {
+                            return self.update(Action::TogglePromptWithEnter);
+                        }
+                    } else {
+                        self.mode = Mode::Normal;
+                    }
+                    return Ok(None);
+                }
+
                 let layout = crate::ui::layout::AppLayout::split_with_mode(
                     self.last_area,
                     self.column_ratios,
@@ -2148,7 +2166,14 @@ impl App {
                     self.mode = Mode::PromptSendCommand {
                         pane_id: pane.id.clone(),
                         input: String::new(),
+                        with_enter: false,
                     };
+                }
+            }
+
+            Action::TogglePromptWithEnter => {
+                if let Mode::PromptSendCommand { with_enter, .. } = &mut self.mode {
+                    *with_enter = !*with_enter;
                 }
             }
 
@@ -2282,9 +2307,41 @@ impl App {
                             self.show_toast("Invalid window name".to_string(), ToastLevel::Warning);
                         }
                     }
-                    Mode::PromptSendCommand { pane_id, input } => {
+                    Mode::PromptSendCommand {
+                        pane_id,
+                        input,
+                        with_enter,
+                    } => {
                         let trimmed = input.trim();
-                        if !trimmed.is_empty() {
+                        if with_enter {
+                            if trimmed.is_empty() {
+                                if let Err(e) = self.client.send_keys_with_enter(&pane_id, "") {
+                                    self.show_toast(
+                                        format!("Send Enter failed: {e}"),
+                                        ToastLevel::Error,
+                                    );
+                                } else {
+                                    self.show_toast(
+                                        format!("Sent <Enter> to {}", pane_id.0),
+                                        ToastLevel::Success,
+                                    );
+                                    self.refresh_active_window_preview();
+                                }
+                            } else if let Err(e) =
+                                self.client.send_keys_with_enter(&pane_id, trimmed)
+                            {
+                                self.show_toast(
+                                    format!("Send with Enter failed: {e}"),
+                                    ToastLevel::Error,
+                                );
+                            } else {
+                                self.show_toast(
+                                    format!("Sent to {}: {trimmed} + ↵", pane_id.0),
+                                    ToastLevel::Success,
+                                );
+                                self.refresh_active_window_preview();
+                            }
+                        } else if !trimmed.is_empty() {
                             // Enter = normal send
                             if let Err(e) = self.client.send_keys(&pane_id, trimmed) {
                                 self.show_toast(
@@ -2306,7 +2363,7 @@ impl App {
             }
 
             Action::ModalSubmitWithEnter => {
-                if let Mode::PromptSendCommand { pane_id, input } = &self.mode {
+                if let Mode::PromptSendCommand { pane_id, input, .. } = &self.mode {
                     let trimmed = input.trim();
                     if trimmed.is_empty() {
                         if let Err(e) = self.client.send_keys_with_enter(pane_id, "") {
